@@ -163,7 +163,7 @@ class AnalysisPlotter:
             # Avoid division by zero if R_fit is extremely small
             rho_semicircle_fit = (1 / (np.pi * max(R_fit**2, 1e-15) * 2.0)) * sqrt_term_fit
 
-            num_bins = max(min(len(eigenvalues)//10, 75), 30)  # Adaptive binning
+            num_bins = max(len(eigenvalues)//10, 30)  # Adaptive binning
             ax.hist(eigenvalues, bins=num_bins, density=True, alpha=0.75, label=f'Empirical ρ(λ)', range=common_plot_range)
             ax.plot(x_semicircle_fit, rho_semicircle_fit, 'r--', linewidth=1.5, label=f'Wigner (R={R_fit:.2f})')
             ax.set_xlabel("Normalized Eigenvalue (λ)")
@@ -379,7 +379,7 @@ class AnalysisPlotter:
             quarter_circle_density = (2 / (np.pi * R**2)) * np.sqrt(np.maximum(0, (2*R)**2 - x_quarter_circle**2)) / 2
             
             # Plot histogram of singular values
-            num_bins = max(min(len(sv_values)//10, 75), 30)  # Adaptive binning
+            num_bins = max(len(sv_values)//10, 30)  # Adaptive binning
             ax.hist(sv_values, bins=num_bins, density=True, alpha=0.75, label='Empirical density', range=common_plot_range)
             
             # Plot quarter-circle law
