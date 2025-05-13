@@ -1,2 +1,3 @@
 # LossGeometry package
-from LossGeometry.main import train_and_analyze
+# Avoid circular imports when running as module
+__version__ = "0.1.0"
