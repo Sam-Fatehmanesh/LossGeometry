@@ -4,7 +4,7 @@ import numpy as np
 import json
 from datetime import datetime
 
-def save_analysis_data(analyzer, model, experiment_dir, timestamp=None):
+def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs=1):
     """
     Save analysis data to HDF5 format
     
@@ -13,6 +13,7 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None):
         model: The model being analyzed
         experiment_dir (str): Base directory for experiments
         timestamp (str, optional): Timestamp for the experiment, if None, will generate one
+        num_runs (int): Number of runs the results are averaged over
         
     Returns:
         str: Path to the saved file
@@ -41,6 +42,7 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None):
         meta_group.attrs['matrix_type'] = stats['matrix_type']
         meta_group.attrs['analysis_type'] = stats['analysis_type']
         meta_group.attrs['matrix_description'] = analyzer.matrix_description
+        meta_group.attrs['num_runs'] = num_runs
         
         # Save model info as attributes
         model_group = f.create_group('model')
@@ -114,6 +116,9 @@ def load_analysis_data(h5_path):
         if 'metadata' in f:
             for key, value in f['metadata'].attrs.items():
                 data['metadata'][key] = value
+            # Default to 1 run if not found
+            if 'num_runs' not in data['metadata']:
+                data['metadata']['num_runs'] = 1
         
         # Load model info
         if 'model' in f:

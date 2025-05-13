@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--log_every_n_batches', type=int, default=200, help='Frequency of analysis calculation')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--num_runs', type=int, default=1, help='Number of training runs to average results over')
     
     # Analysis parameters
     parser.add_argument('--analyze_W', action='store_true', help='Analyze weight matrices (default)')
@@ -46,6 +47,8 @@ def main():
     
     # Run the analysis
     print("Starting LossGeometry analysis...")
+    if args.num_runs > 1:
+        print(f"Running {args.num_runs} training runs and averaging results.")
     output_dir, h5_path = train_and_analyze(args)
     print(f"Analysis complete. Results saved to: {output_dir}")
     print(f"Data saved to: {h5_path}")

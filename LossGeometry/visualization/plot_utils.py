@@ -25,13 +25,14 @@ class AnalysisPlotter:
             os.makedirs(output_dir)
             print(f"Created directory: {output_dir}")
     
-    def plot_loss(self, batch_numbers, loss_values):
+    def plot_loss(self, batch_numbers, loss_values, plot_title=None):
         """
         Plot loss over batches
         
         Args:
             batch_numbers (list): Batch numbers
             loss_values (list): Loss values
+            plot_title (str): Optional custom title for the plot
         """
         if not loss_values:
             print("No loss values to plot.")
@@ -42,7 +43,7 @@ class AnalysisPlotter:
         plt.plot(batch_numbers, loss_values, 'b-')
         plt.xlabel('Batch Number')
         plt.ylabel('Loss')
-        plt.title('MNIST Training Loss')
+        plt.title(plot_title if plot_title else 'MNIST Training Loss')
         plt.grid(True)
         
         # Add moving average to smooth the curve
@@ -69,7 +70,7 @@ class AnalysisPlotter:
         print(f"Saved loss plot to: {plot_path}")
         plt.close()
     
-    def plot_spectral_density(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description):
+    def plot_spectral_density(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description, runs=1):
         """
         Plot spectral density evolution
         
@@ -79,12 +80,14 @@ class AnalysisPlotter:
             results_data (list): List of eigenvalue arrays
             batch_numbers (list): Batch numbers
             matrix_description (str): Description of the matrix type
+            runs (int): Number of runs the results are averaged over
         """
         if not results_data:
             print(f"No eigenvalues data for {layer_name}. Skipping plot.")
             return
         
-        print(f"Plotting Spectral Density evolution for {layer_name} {matrix_description}...")
+        run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
+        print(f"Plotting Spectral Density evolution for {layer_name} {matrix_description}{run_info}...")
         
         num_plots_aim = 6
         num_plots_to_show = min(len(results_data), num_plots_aim)
@@ -177,7 +180,8 @@ class AnalysisPlotter:
             axes[j].axis('off')
 
         layer_info_str = f"Layer '{layer_name}', Shape: {layer_shape}"
-        fig.suptitle(f"Spectral Density Evolution\n{matrix_description}\n{layer_info_str}", fontsize=14)
+        title_with_runs = f"Spectral Density Evolution{run_info}\n{matrix_description}\n{layer_info_str}"
+        fig.suptitle(title_with_runs, fontsize=14)
         plt.tight_layout(rect=[0, 0.03, 1, 0.91])  # Adjust rect to prevent title overlap
         
         # Save plot to file
@@ -187,7 +191,7 @@ class AnalysisPlotter:
         print(f"Saved spectral density plot for {layer_name} to: {plot_path}")
         plt.close()
     
-    def plot_level_spacing(self, layer_name, layer_shape, std_dev_list, last_spacings, batch_numbers, matrix_description):
+    def plot_level_spacing(self, layer_name, layer_shape, std_dev_list, last_spacings, batch_numbers, matrix_description, runs=1):
         """
         Plot level spacing evolution and final P(s)
         
@@ -198,12 +202,14 @@ class AnalysisPlotter:
             last_spacings (numpy.ndarray): Array of last normalized spacings
             batch_numbers (list): Batch numbers
             matrix_description (str): Description of the matrix type
+            runs (int): Number of runs the results are averaged over
         """
         if not std_dev_list:
             print(f"No level spacing data for {layer_name}. Skipping plot.")
             return
             
-        print(f"Plotting Level Spacing evolution for {layer_name} {matrix_description}...")
+        run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
+        print(f"Plotting Level Spacing evolution for {layer_name} {matrix_description}{run_info}...")
         
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
@@ -278,7 +284,7 @@ class AnalysisPlotter:
             ax.set_title("Final P(s) - Not Available")
 
         layer_info_str = f"Layer '{layer_name}', Shape: {layer_shape}"
-        fig.suptitle(f"Level Spacing Analysis\n{matrix_description}\n{layer_info_str}", fontsize=14)
+        fig.suptitle(f"Level Spacing Analysis{run_info}\n{matrix_description}\n{layer_info_str}", fontsize=14)
         plt.tight_layout(rect=[0, 0.03, 1, 0.91])
         
         # Save plot to file
@@ -288,7 +294,7 @@ class AnalysisPlotter:
         print(f"Saved level spacing plot for {layer_name} to: {plot_path}")
         plt.close()
         
-    def plot_singular_values(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description):
+    def plot_singular_values(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description, runs=1):
         """
         Plot singular value distribution
         
@@ -298,12 +304,14 @@ class AnalysisPlotter:
             results_data (list): List of singular value arrays
             batch_numbers (list): Batch numbers
             matrix_description (str): Description of the matrix type
+            runs (int): Number of runs the results are averaged over
         """
         if not results_data:
             print(f"No singular value data for {layer_name}. Skipping plot.")
             return
             
-        print(f"Plotting Singular Value distribution for {layer_name} {matrix_description}...")
+        run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
+        print(f"Plotting Singular Value distribution for {layer_name} {matrix_description}{run_info}...")
         
         num_plots_aim = 6
         num_plots_to_show = min(len(results_data), num_plots_aim)
@@ -391,7 +399,7 @@ class AnalysisPlotter:
             axes[j].axis('off')
 
         layer_info_str = f"Layer '{layer_name}', Shape: {layer_shape}"
-        fig.suptitle(f"Singular Value Distribution\n{matrix_description}\n{layer_info_str}", fontsize=14)
+        fig.suptitle(f"Singular Value Distribution{run_info}\n{matrix_description}\n{layer_info_str}", fontsize=14)
         plt.tight_layout(rect=[0, 0.03, 1, 0.91])  # Adjust rect to prevent title overlap
         
         # Save plot to file

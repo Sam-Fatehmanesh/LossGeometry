@@ -54,6 +54,7 @@ This will:
 - `--batch_size`: Batch size (default: 64)
 - `--log_every_n_batches`: Frequency of analysis calculation (default: 200)
 - `--learning_rate`: Learning rate (default: 0.001)
+- `--num_runs`: Number of training runs to average results over (default: 1)
 
 #### Analysis Parameters
 - `--analyze_W`: Analyze weight matrices (default if none specified)
@@ -85,11 +86,17 @@ python -m LossGeometry.main --analyze_level_spacing --analyze_singular_values
 python -m LossGeometry.main --analyze_delta_W
 ```
 
+4. Run multiple training runs and average the results:
+
+```bash
+python -m LossGeometry.main --num_runs 5
+```
+
 ## Data Storage
 
 Analysis data is stored in HDF5 format with the following structure:
 
-- `metadata/`: Timestamp, matrix type, analysis type, matrix description
+- `metadata/`: Timestamp, matrix type, analysis type, matrix description, number of runs
 - `model/`: Model parameters (input size, hidden size, output size, num hidden layers)
 - `batch_numbers`: Array of batch numbers for loss values
 - `batches`: Array of batch numbers for analysis points
@@ -107,7 +114,13 @@ Analysis data is stored in HDF5 format with the following structure:
 
 ## Requirements
 
+This project requires the following Python packages:
 - PyTorch
 - NumPy
 - Matplotlib
-- h5py 
+- h5py
+
+You can install all required dependencies using:
+```bash
+pip install -r requirements.txt
+``` 

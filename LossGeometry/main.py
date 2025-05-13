@@ -6,6 +6,7 @@ import torch.optim as optim
 import time
 from datetime import datetime
 import warnings
+import numpy as np
 
 from LossGeometry.models.mlp import SimpleMLP
 from LossGeometry.datasets.mnist_dataset import load_mnist
@@ -28,6 +29,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--log_every_n_batches', type=int, default=200, help='Frequency of analysis calculation')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--num_runs', type=int, default=1, help='Number of training runs to average results over')
     
     # Analysis parameters
     parser.add_argument('--analyze_W', action='store_true', help='Analyze weight matrices (default)')
@@ -65,117 +67,250 @@ def train_and_analyze(args):
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # Initialize model
-    model = SimpleMLP(
+    # Get a reference model to determine target layers
+    reference_model = SimpleMLP(
         input_size=args.input_size,
         hidden_size=args.hidden_size,
         output_size=args.output_size,
         num_hidden_layers=args.num_hidden_layers
     )
-    model.to(device)
     
     # Get target layers for analysis
-    target_layers = model.get_target_layers()
+    target_layers = reference_model.get_target_layers()
     
     # Verify target layer dimensions
     layer_shapes = {}
     for target_layer_name in target_layers:
         try:
-            target_param = model.get_parameter(target_layer_name)
+            target_param = reference_model.get_parameter(target_layer_name)
             layer_shapes[target_layer_name] = target_param.shape
             print(f"Layer for analysis: '{target_layer_name}' with size {target_param.shape[0]}x{target_param.shape[1]}")
         except AttributeError:
             print(f"WARNING: Target layer '{target_layer_name}' not found in the model.")
+            
+    # Dictionary to collect all runs' results
+    all_runs_data = {
+        'loss_values': [],
+        'batch_numbers': [],
+        'batches': []
+    }
     
-    # Setup optimizer and loss
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-    criterion = nn.CrossEntropyLoss()
+    # Initialize dictionaries to store accumulated eigenvalues and singular values
+    accumulated_eigenvalues = {}
+    accumulated_singular_values = {}
+    for layer_name in target_layers:
+        accumulated_eigenvalues[layer_name] = {}
+        accumulated_singular_values[layer_name] = {}
     
-    # Load MNIST dataset
-    train_loader = load_mnist(batch_size=args.batch_size)
+    # List to store analyzers from each run
+    analyzers = []
     
-    # Initialize spectral analyzer
-    analyzer = SpectralAnalyzer(
+    # Disable warnings during analysis
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    
+    # Run training N times
+    for run_idx in range(args.num_runs):
+        print(f"\n{'='*40}")
+        print(f"Starting Run {run_idx+1}/{args.num_runs}")
+        print(f"{'='*40}")
+        
+        # Initialize model fresh for this run
+        model = SimpleMLP(
+            input_size=args.input_size,
+            hidden_size=args.hidden_size,
+            output_size=args.output_size,
+            num_hidden_layers=args.num_hidden_layers
+        )
+        model.to(device)
+        
+        # Setup optimizer and loss
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        criterion = nn.CrossEntropyLoss()
+        
+        # Load MNIST dataset
+        train_loader = load_mnist(batch_size=args.batch_size)
+        
+        # Initialize spectral analyzer for this run
+        analyzer = SpectralAnalyzer(
+            analyze_W=args.analyze_W,
+            analyze_delta_W=args.analyze_delta_W,
+            analyze_spectral_density=args.analyze_spectral_density,
+            analyze_level_spacing=args.analyze_level_spacing,
+            analyze_singular_values=args.analyze_singular_values
+        )
+        analyzer.initialize_layer_stats(target_layers)
+        analyzers.append(analyzer)
+        
+        # Print analysis configuration (only for first run)
+        if run_idx == 0:
+            print(f"\nStarting training on {device} for {args.num_epochs} epochs.")
+            print(f"Analyzing: {analyzer.stats['analysis_type']} of {analyzer.matrix_description}")
+            if args.analyze_singular_values:
+                print(f"Additionally analyzing: Singular Value Distributions")
+            print(f"Calculation Frequency: Every {args.log_every_n_batches} batches.")
+            print(f"Performing {args.num_runs} runs and averaging results.")
+        
+        # Training loop
+        current_batch = 0
+        start_time = time.time()
+        
+        for epoch in range(args.num_epochs):
+            epoch_start_time = time.time()
+            epoch_loss_sum = 0.0
+            num_batches_in_epoch = 0
+            last_batch_loss = 0.0
+            
+            for batch_idx, (inputs, labels) in enumerate(train_loader):
+                # Standard training step
+                model.train()
+                optimizer.zero_grad()
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()  # Calculate gradients
+                
+                # Perform analysis
+                if current_batch % args.log_every_n_batches == 0:
+                    calc_start_time = time.time()
+                    print(f"\n--- Run {run_idx+1}, Analyzing Batch {current_batch} (Epoch {epoch+1}) ---")
+                    
+                    analyzer.analyze_batch(model, optimizer, current_batch)
+                    
+                    calc_duration = time.time() - calc_start_time
+                
+                # Optimizer step
+                optimizer.step()
+                
+                # Post-step
+                current_batch += 1
+                num_batches_in_epoch += 1
+                epoch_loss_sum += loss.item()
+                last_batch_loss = loss.item()
+                
+                # Track loss for plotting
+                analyzer.track_loss(loss.item(), current_batch)
+            
+            # End of epoch
+            epoch_duration = time.time() - epoch_start_time
+            avg_epoch_loss = epoch_loss_sum / num_batches_in_epoch if num_batches_in_epoch > 0 else 0
+            print(f"\nRun {run_idx+1}, Epoch {epoch+1}/{args.num_epochs} completed in {epoch_duration:.2f}s. Avg Loss: {avg_epoch_loss:.4f}. (Last batch loss: {last_batch_loss:.4f})")
+        
+        total_duration = time.time() - start_time
+        print(f"\nRun {run_idx+1} training finished in {total_duration:.2f}s")
+        
+        # Collect this run's results
+        all_runs_data['loss_values'].append(analyzer.stats['loss_values'])
+        all_runs_data['batch_numbers'].append(analyzer.stats['batch_numbers'])
+        all_runs_data['batches'].append(analyzer.stats['batch'])
+        
+        # Collect eigenvalues and singular values
+        for layer_name in target_layers:
+            # For eigenvalues
+            if args.analyze_spectral_density and 'eigenvalues_list' in analyzer.stats['results'][layer_name]:
+                eigenvalues_list = analyzer.stats['results'][layer_name]['eigenvalues_list']
+                for i, eigenvalues in enumerate(eigenvalues_list):
+                    batch_key = analyzer.stats['batch'][i] if i < len(analyzer.stats['batch']) else i
+                    if batch_key not in accumulated_eigenvalues[layer_name]:
+                        accumulated_eigenvalues[layer_name][batch_key] = []
+                    accumulated_eigenvalues[layer_name][batch_key].append(eigenvalues)
+            
+            # For singular values
+            if args.analyze_singular_values and 'singular_values_list' in analyzer.stats['results'][layer_name]:
+                sv_list = analyzer.stats['results'][layer_name]['singular_values_list']
+                for i, sv in enumerate(sv_list):
+                    batch_key = analyzer.stats['batch'][i] if i < len(analyzer.stats['batch']) else i
+                    if batch_key not in accumulated_singular_values[layer_name]:
+                        accumulated_singular_values[layer_name][batch_key] = []
+                    accumulated_singular_values[layer_name][batch_key].append(sv)
+    
+    # Re-enable warnings after analysis
+    warnings.filterwarnings("default", category=RuntimeWarning)
+    
+    # Create a new analyzer for the aggregated results
+    aggregated_analyzer = SpectralAnalyzer(
         analyze_W=args.analyze_W,
         analyze_delta_W=args.analyze_delta_W,
         analyze_spectral_density=args.analyze_spectral_density,
         analyze_level_spacing=args.analyze_level_spacing,
         analyze_singular_values=args.analyze_singular_values
     )
-    analyzer.initialize_layer_stats(target_layers)
+    aggregated_analyzer.initialize_layer_stats(target_layers)
     
-    # Print analysis configuration
-    print(f"\nStarting training on {device} for {args.num_epochs} epochs.")
-    print(f"Analyzing: {analyzer.stats['analysis_type']} of {analyzer.matrix_description}")
-    if args.analyze_singular_values:
-        print(f"Additionally analyzing: Singular Value Distributions")
-    print(f"Calculation Frequency: Every {args.log_every_n_batches} batches.")
-    
-    # Disable warnings during analysis
-    warnings.filterwarnings("ignore", category=RuntimeWarning)
-    
-    # Training loop
-    current_batch = 0
-    start_time = time.time()
-    
-    for epoch in range(args.num_epochs):
-        epoch_start_time = time.time()
-        epoch_loss_sum = 0.0
-        num_batches_in_epoch = 0
-        last_batch_loss = 0.0
+    # Compute average loss
+    if args.num_runs > 1:
+        # For simplicity, use the batches from the first run
+        aggregated_analyzer.stats['batch'] = analyzers[0].stats['batch']
+        aggregated_analyzer.stats['batch_numbers'] = analyzers[0].stats['batch_numbers']
         
-        for batch_idx, (inputs, labels) in enumerate(train_loader):
-            # Standard training step
-            model.train()
-            optimizer.zero_grad()
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()  # Calculate gradients
-            
-            # Perform analysis
-            if current_batch % args.log_every_n_batches == 0:
-                calc_start_time = time.time()
-                print(f"\n--- Analyzing Batch {current_batch} (Epoch {epoch+1}) ---")
-                
-                analyzer.analyze_batch(model, optimizer, current_batch)
-                
-                calc_duration = time.time() - calc_start_time
-            
-            # Optimizer step
-            optimizer.step()
-            
-            # Post-step
-            current_batch += 1
-            num_batches_in_epoch += 1
-            epoch_loss_sum += loss.item()
-            last_batch_loss = loss.item()
-            
-            # Track loss for plotting
-            analyzer.track_loss(loss.item(), current_batch)
+        # Average losses across runs
+        avg_losses = np.mean([run_losses for run_losses in all_runs_data['loss_values']], axis=0)
+        aggregated_analyzer.stats['loss_values'] = avg_losses.tolist()
         
-        # End of epoch
-        epoch_duration = time.time() - epoch_start_time
-        avg_epoch_loss = epoch_loss_sum / num_batches_in_epoch if num_batches_in_epoch > 0 else 0
-        print(f"\nEpoch {epoch+1}/{args.num_epochs} completed in {epoch_duration:.2f}s. Avg Loss: {avg_epoch_loss:.4f}. (Last batch loss: {last_batch_loss:.4f})")
+        # Process eigenvalues and singular values
+        for layer_name in target_layers:
+            # Create empty result structure for this layer
+            if layer_name not in aggregated_analyzer.stats['results']:
+                aggregated_analyzer.stats['results'][layer_name] = {}
+            
+            # Average eigenvalues
+            if args.analyze_spectral_density:
+                eigenvalues_list = []
+                for batch in sorted(accumulated_eigenvalues[layer_name].keys()):
+                    if accumulated_eigenvalues[layer_name][batch]:
+                        # For each batch, get the eigenvalues from each run
+                        batch_eigenvalues = accumulated_eigenvalues[layer_name][batch]
+                        
+                        # Convert to histograms and average the distributions
+                        # This is a simplified approach - more sophisticated approaches could be used
+                        if batch_eigenvalues and len(batch_eigenvalues) > 0:
+                            # Flatten all eigenvalues from all runs at this batch
+                            all_eigenvalues = np.concatenate(batch_eigenvalues)
+                            eigenvalues_list.append(all_eigenvalues)
+                
+                aggregated_analyzer.stats['results'][layer_name]['eigenvalues_list'] = eigenvalues_list
+                if eigenvalues_list:
+                    aggregated_analyzer.stats['results'][layer_name]['last_eigenvalues'] = eigenvalues_list[-1]
+            
+            # Average singular values
+            if args.analyze_singular_values:
+                sv_list = []
+                for batch in sorted(accumulated_singular_values[layer_name].keys()):
+                    if accumulated_singular_values[layer_name][batch]:
+                        # For each batch, get the singular values from each run
+                        batch_sv = accumulated_singular_values[layer_name][batch]
+                        
+                        if batch_sv and len(batch_sv) > 0:
+                            # Flatten all singular values from all runs at this batch
+                            all_sv = np.concatenate(batch_sv)
+                            sv_list.append(all_sv)
+                
+                aggregated_analyzer.stats['results'][layer_name]['singular_values_list'] = sv_list
+                if sv_list:
+                    aggregated_analyzer.stats['results'][layer_name]['last_singular_values'] = sv_list[-1]
+    else:
+        # If only one run, use the first analyzer's data directly
+        aggregated_analyzer = analyzers[0]
     
-    total_duration = time.time() - start_time
-    print(f"\nTraining finished in {total_duration:.2f}s")
-    
-    # Save the data
-    h5_path = save_analysis_data(analyzer, model, experiment_dir, timestamp)
+    # Save the aggregated data
+    h5_path = save_analysis_data(aggregated_analyzer, reference_model, experiment_dir, timestamp, num_runs=args.num_runs)
     
     # Generate plots
     print("\nGenerating plots...")
     plotter = AnalysisPlotter(output_dir, timestamp)
     
     # Plot loss
-    plotter.plot_loss(analyzer.stats['batch_numbers'], analyzer.stats['loss_values'])
+    if args.num_runs > 1:
+        plotter.plot_loss(aggregated_analyzer.stats['batch_numbers'], 
+                          aggregated_analyzer.stats['loss_values'],
+                          plot_title=f"MNIST Training Loss (Averaged over {args.num_runs} runs)")
+    else:
+        plotter.plot_loss(aggregated_analyzer.stats['batch_numbers'], 
+                          aggregated_analyzer.stats['loss_values'])
     
     # Plot analysis results for each layer
     for layer_name in target_layers:
         layer_shape = layer_shapes.get(layer_name, None)
-        layer_results = analyzer.stats['results'][layer_name]
+        layer_results = aggregated_analyzer.stats['results'][layer_name]
         
         # Plot spectral density if analyzed
         if args.analyze_spectral_density and 'eigenvalues_list' in layer_results:
@@ -183,8 +318,9 @@ def train_and_analyze(args):
                 layer_name, 
                 layer_shape, 
                 layer_results['eigenvalues_list'], 
-                analyzer.stats['batch'], 
-                analyzer.matrix_description
+                aggregated_analyzer.stats['batch'], 
+                aggregated_analyzer.matrix_description,
+                runs=args.num_runs
             )
         
         # Plot level spacing if analyzed
@@ -194,8 +330,9 @@ def train_and_analyze(args):
                 layer_shape, 
                 layer_results['std_dev_norm_spacing_list'], 
                 layer_results.get('last_normalized_spacings', None), 
-                analyzer.stats['batch'], 
-                analyzer.matrix_description
+                aggregated_analyzer.stats['batch'], 
+                aggregated_analyzer.matrix_description,
+                runs=args.num_runs
             )
         
         # Plot singular values if analyzed
@@ -204,12 +341,10 @@ def train_and_analyze(args):
                 layer_name, 
                 layer_shape, 
                 layer_results['singular_values_list'], 
-                analyzer.stats['batch'], 
-                analyzer.matrix_description
+                aggregated_analyzer.stats['batch'], 
+                aggregated_analyzer.matrix_description,
+                runs=args.num_runs
             )
-    
-    # Re-enable warnings after analysis
-    warnings.filterwarnings("default", category=RuntimeWarning)
     
     print("\nAnalysis complete. Results saved to:", output_dir)
     return output_dir, h5_path
