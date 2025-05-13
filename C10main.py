@@ -20,7 +20,7 @@ target_layer_name = 'fc2.weight' # Target the SQUARE hidden layer weight
 batch_size = 64
 # --- Gradient Modification Options ---
 use_antisymmetric_gradient_only = False # <<< Set True to use only the antisymmetric part of the gradient for the target layer
-use_symmetric_gradient_only = True # <<< Set True to use only the symmetric part of the gradient for the target layer
+use_symmetric_gradient_only = False # <<< Set True to use only the symmetric part of the gradient for the target layer
 
 # --- Select Matrix Type (Choose ONE) ---
 analyze_W = True
