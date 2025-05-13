@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 import warnings
 import numpy as np
+from tqdm import tqdm
 
 from LossGeometry.models.mlp import SimpleMLP
 from LossGeometry.datasets.mnist_dataset import load_mnist
@@ -108,11 +109,19 @@ def train_and_analyze(args):
     # Disable warnings during analysis
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     
+    # Print analysis configuration
+    print(f"\nStarting training on {device} for {args.num_epochs} epochs.")
+    print(f"Analyzing layers with {args.hidden_size} hidden units, {args.num_hidden_layers} hidden layers")
+    print(f"Calculation Frequency: Every {args.log_every_n_batches} batches.")
+    if args.num_runs > 1:
+        print(f"Performing {args.num_runs} runs and averaging results.")
+    
     # Run training N times
-    for run_idx in range(args.num_runs):
-        print(f"\n{'='*40}")
-        print(f"Starting Run {run_idx+1}/{args.num_runs}")
-        print(f"{'='*40}")
+    run_loop = tqdm(range(args.num_runs), desc="Training Runs", position=0, 
+                    leave=True, colour='blue', ncols=100)
+    
+    for run_idx in run_loop:
+        run_loop.set_description(f"Run {run_idx+1}/{args.num_runs}")
         
         # Initialize model fresh for this run
         model = SimpleMLP(
@@ -143,24 +152,40 @@ def train_and_analyze(args):
         
         # Print analysis configuration (only for first run)
         if run_idx == 0:
-            print(f"\nStarting training on {device} for {args.num_epochs} epochs.")
-            print(f"Analyzing: {analyzer.stats['analysis_type']} of {analyzer.matrix_description}")
+            matrix_type = "Weight (W)" if args.analyze_W else "Weight Update (ΔW)"
+            analysis_types = []
+            if args.analyze_spectral_density:
+                analysis_types.append("Spectral Density")
+            if args.analyze_level_spacing:
+                analysis_types.append("Level Spacing")
             if args.analyze_singular_values:
-                print(f"Additionally analyzing: Singular Value Distributions")
-            print(f"Calculation Frequency: Every {args.log_every_n_batches} batches.")
-            print(f"Performing {args.num_runs} runs and averaging results.")
+                analysis_types.append("Singular Values")
+            
+            analysis_desc = ", ".join(analysis_types)
+            run_loop.write(f"Analyzing: {matrix_type} matrices for {analysis_desc}")
         
         # Training loop
         current_batch = 0
         start_time = time.time()
         
-        for epoch in range(args.num_epochs):
-            epoch_start_time = time.time()
+        # Create progress bars for epochs
+        epoch_loop = tqdm(range(args.num_epochs), desc=f"Run {run_idx+1} Epochs", 
+                          position=1, leave=False, colour='green', ncols=100)
+        
+        for epoch in epoch_loop:
             epoch_loss_sum = 0.0
             num_batches_in_epoch = 0
             last_batch_loss = 0.0
             
-            for batch_idx, (inputs, labels) in enumerate(train_loader):
+            # Estimate total batches for progress bar
+            estimated_batches = len(train_loader)
+            
+            # Create progress bar for batches
+            batch_loop = tqdm(enumerate(train_loader), desc=f"Run {run_idx+1} Epoch {epoch+1}", 
+                              total=estimated_batches, position=2, leave=False, 
+                              colour='yellow', ncols=100)
+            
+            for batch_idx, (inputs, labels) in batch_loop:
                 # Standard training step
                 model.train()
                 optimizer.zero_grad()
@@ -171,12 +196,10 @@ def train_and_analyze(args):
                 
                 # Perform analysis
                 if current_batch % args.log_every_n_batches == 0:
-                    calc_start_time = time.time()
-                    print(f"\n--- Run {run_idx+1}, Analyzing Batch {current_batch} (Epoch {epoch+1}) ---")
-                    
+                    batch_loop.set_postfix({"analyzing": True, "loss": loss.item()})
                     analyzer.analyze_batch(model, optimizer, current_batch)
-                    
-                    calc_duration = time.time() - calc_start_time
+                else:
+                    batch_loop.set_postfix({"loss": loss.item()})
                 
                 # Optimizer step
                 optimizer.step()
@@ -191,12 +214,11 @@ def train_and_analyze(args):
                 analyzer.track_loss(loss.item(), current_batch)
             
             # End of epoch
-            epoch_duration = time.time() - epoch_start_time
             avg_epoch_loss = epoch_loss_sum / num_batches_in_epoch if num_batches_in_epoch > 0 else 0
-            print(f"\nRun {run_idx+1}, Epoch {epoch+1}/{args.num_epochs} completed in {epoch_duration:.2f}s. Avg Loss: {avg_epoch_loss:.4f}. (Last batch loss: {last_batch_loss:.4f})")
-        
+            epoch_loop.set_postfix({"avg_loss": f"{avg_epoch_loss:.4f}"})
+            
         total_duration = time.time() - start_time
-        print(f"\nRun {run_idx+1} training finished in {total_duration:.2f}s")
+        run_loop.write(f"Run {run_idx+1} completed in {total_duration:.2f}s. Final loss: {last_batch_loss:.4f}")
         
         # Collect this run's results
         all_runs_data['loss_values'].append(analyzer.stats['loss_values'])
@@ -238,6 +260,7 @@ def train_and_analyze(args):
     
     # Compute average loss
     if args.num_runs > 1:
+        print("Aggregating results from all runs...")
         # For simplicity, use the batches from the first run
         aggregated_analyzer.stats['batch'] = analyzers[0].stats['batch']
         aggregated_analyzer.stats['batch_numbers'] = analyzers[0].stats['batch_numbers']

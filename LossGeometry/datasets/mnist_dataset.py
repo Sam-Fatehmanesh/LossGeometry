@@ -1,6 +1,7 @@
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 def load_mnist(batch_size=64, download=True):
     """
@@ -36,5 +37,5 @@ def load_mnist(batch_size=64, download=True):
         shuffle=True
     )
     
-    print("Dataset loaded.")
+    print(f"Dataset loaded: {len(train_dataset)} samples, {len(train_loader)} batches")
     return train_loader 
