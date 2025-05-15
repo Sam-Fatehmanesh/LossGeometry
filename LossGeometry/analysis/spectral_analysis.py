@@ -32,11 +32,15 @@ class SpectralAnalyzer:
         self.analyze_level_spacing = analyze_level_spacing
         self.analyze_singular_values = analyze_singular_values
         
+        # Figure out GPU vs CPU once
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Using device: {self.device}")
+        
         # Description for plotting titles
         if analyze_W:
-            self.matrix_description = "Centered & Normalized Weight (W' / (std(W') * sqrt(N)))"
+            self.matrix_description = "Centered & Normalized Weight (W' / (std(W') * sqrt(max(N))))"
         else:
-            self.matrix_description = "Normalized Weight Update (ΔW / (std(ΔW) * sqrt(N)))"
+            self.matrix_description = "Normalized Weight Update (ΔW / (std(ΔW) * sqrt(max(N))))"
             
         # Initialize results structure
         self.reset_stats()
@@ -90,48 +94,47 @@ class SpectralAnalyzer:
                     target_param = model.get_parameter(target_layer_name)
                     layer_shapes[target_layer_name] = target_param.shape
                     
-                    # --- Get the raw matrix ---
+                    # --- Get the raw matrix and keep it on the original device ---
                     if self.analyze_W:
-                        matrix = target_param.data.cpu().numpy()
+                        matrix_tensor = target_param.data.to(self.device)
                     elif self.analyze_delta_W:
                         if target_param.grad is None:
                             print(f"  Skipping {target_layer_name} ΔW analysis: Gradient is None.")
-                            matrix = None
+                            matrix_tensor = None
                         else:
-                            grad_W_tensor = target_param.grad
+                            grad_W_tensor = target_param.grad.to(self.device)
                             lr = optimizer.param_groups[0]['lr']
                             # Delta W = -lr * gradient
-                            delta_W_tensor = -lr * grad_W_tensor
-                            matrix = delta_W_tensor.cpu().numpy()
+                            matrix_tensor = -lr * grad_W_tensor
                     
                     # --- Perform analysis ---
-                    if matrix is not None:
+                    if matrix_tensor is not None:
                         # Check if matrix is effectively zero
-                        matrix_std = np.std(matrix)
+                        matrix_std = torch.std(matrix_tensor)
                         if matrix_std < 1e-15:
-                            print(f"  Skipping {target_layer_name} analysis: Matrix standard deviation is near zero ({matrix_std:.2e}).")
+                            print(f"  Skipping {target_layer_name} analysis: Matrix standard deviation is near zero ({matrix_std.item():.2e}).")
                             continue
                         
-                        # Try to compute eigenvalues if needed
-                        if self.analyze_spectral_density or self.analyze_level_spacing:
+                        # Try to compute eigenvalues if needed (only for square matrices)
+                        if (self.analyze_spectral_density or self.analyze_level_spacing) and matrix_tensor.shape[0] == matrix_tensor.shape[1]:
                             try:
-                                eigenvalues_complex = np.linalg.eigvals(matrix)
-                                
                                 if self.analyze_spectral_density:
-                                    self._analyze_spectral_density(matrix, eigenvalues_complex, target_layer_name)
-                                    need_to_record_batch = True
+                                    if self._analyze_spectral_density(matrix_tensor, target_layer_name):
+                                        need_to_record_batch = True
                                 
                                 elif self.analyze_level_spacing:
-                                    if self._analyze_level_spacing(eigenvalues_complex, target_layer_name):
+                                    if self._analyze_level_spacing(matrix_tensor, target_layer_name):
                                         need_to_record_batch = True
                             
-                            except np.linalg.LinAlgError:
-                                print(f"  Error: Eigenvalue computation failed for {target_layer_name} at batch {current_batch}.")
-                                print(f"  This is expected for non-square matrices, but will still compute SVD if requested.")
+                            except RuntimeError as e:
+                                print(f"  Error during eigenvalue computation for {target_layer_name}: {e}")
+                        elif self.analyze_spectral_density or self.analyze_level_spacing:
+                            # Non-square matrix
+                            print(f"  Skipping eigenvalue analysis for non-square matrix {target_layer_name} of shape {matrix_tensor.shape}.")
                         
-                        # Compute singular values if requested
+                        # Compute singular values if requested (works for any matrix shape)
                         if self.analyze_singular_values:
-                            if self._analyze_singular_values(matrix, target_layer_name):
+                            if self._analyze_singular_values(matrix_tensor, target_layer_name):
                                 need_to_record_batch = True
                 
                 except AttributeError:
@@ -145,107 +148,133 @@ class SpectralAnalyzer:
         
         return need_to_record_batch
     
-    def _analyze_spectral_density(self, matrix, eigenvalues_complex, target_layer_name):
+    def _analyze_spectral_density(self, matrix_tensor, target_layer_name):
         """Analyze spectral density of the matrix"""
         # --- Density Analysis: Normalize matrix THEN compute eigenvalues ---
         matrix_norm = None
         
         if self.analyze_W:
-            W_centered = matrix - np.mean(matrix)
-            sigma_W_centered = np.std(W_centered)
+            W_centered = matrix_tensor - torch.mean(matrix_tensor)
+            sigma_W_centered = torch.std(W_centered)
             if sigma_W_centered > 1e-15:
-                matrix_norm = W_centered / (sigma_W_centered * np.sqrt(min(matrix.shape)))
-            else: 
+                # Use sqrt(min(shape)) for normalization
+                min_dim = torch.tensor(min(matrix_tensor.shape), device=self.device, dtype=torch.float)
+                matrix_norm = W_centered / (sigma_W_centered * torch.sqrt(min_dim))
+            else:
                 print(f"  Skipping {target_layer_name} Density(W): Std dev near zero.")
         else:  # analyze_delta_W
-            sigma_delta_w = np.std(matrix)
+            sigma_delta_w = torch.std(matrix_tensor)
             if sigma_delta_w > 1e-15:
-                matrix_norm = matrix / (sigma_delta_w * np.sqrt(min(matrix.shape)))
-            else: 
+                # Use sqrt(min(shape)) for normalization
+                min_dim = torch.tensor(min(matrix_tensor.shape), device=self.device, dtype=torch.float)
+                matrix_norm = matrix_tensor / (sigma_delta_w * torch.sqrt(min_dim))
+            else:
                 print(f"  Skipping {target_layer_name} Density(ΔW): Std dev near zero.")
 
         if matrix_norm is not None:
             try:
-                norm_eigenvalues_complex = np.linalg.eigvals(matrix_norm)
-                norm_eigenvalues = np.real(norm_eigenvalues_complex)
-                print(f"  Calculated {len(norm_eigenvalues)} normalized eigenvalues for {target_layer_name}.")
-                self.stats['results'][target_layer_name]['eigenvalues_list'].append(norm_eigenvalues)
-                self.stats['results'][target_layer_name]['last_eigenvalues'] = norm_eigenvalues
+                # Compute eigenvalues on GPU
+                eigs = torch.linalg.eigvals(matrix_norm)
+                
+                # Extract real part and move to CPU
+                real_eigs = eigs.real.cpu().numpy()
+                
+                print(f"  Calculated {len(real_eigs)} normalized eigenvalues for {target_layer_name}.")
+                self.stats['results'][target_layer_name]['eigenvalues_list'].append(real_eigs)
+                self.stats['results'][target_layer_name]['last_eigenvalues'] = real_eigs
                 return True
-            except np.linalg.LinAlgError:
-                print(f"  Error: Eigenvalue computation failed for *normalized* matrix of {target_layer_name}. Skipping density analysis.")
+            except RuntimeError as e:
+                print(f"  Error: Eigenvalue computation failed for *normalized* matrix of {target_layer_name}: {e}")
         
         return False
     
-    def _analyze_level_spacing(self, eigenvalues_complex, target_layer_name):
+    def _analyze_level_spacing(self, matrix_tensor, target_layer_name):
         """Analyze level spacing of the matrix eigenvalues"""
-        eigenvalues = np.real(eigenvalues_complex)  # Use real part for spacing
-        print(f"  Calculated {len(eigenvalues)} raw eigenvalues for {target_layer_name} spacing analysis.")
+        try:
+            # Compute eigenvalues on GPU
+            eigs = torch.linalg.eigvals(matrix_tensor)
+            
+            # Extract real part and move to CPU for spacing analysis
+            eigenvalues = eigs.real.cpu().numpy()
+            
+            print(f"  Calculated {len(eigenvalues)} raw eigenvalues for {target_layer_name} spacing analysis.")
 
-        if len(eigenvalues) >= 2:
-            sorted_eigenvalues = np.sort(eigenvalues)
-            spacings = np.diff(sorted_eigenvalues)
+            if len(eigenvalues) >= 2:
+                sorted_eigenvalues = np.sort(eigenvalues)
+                spacings = np.diff(sorted_eigenvalues)
 
-            if len(spacings) > 0:
-                # Filter out tiny/zero spacings BEFORE calculating mean
-                spacings_filtered = spacings[spacings > 1e-10]
-                if len(spacings_filtered) > 0:
-                    mean_spacing = np.mean(spacings_filtered)
+                if len(spacings) > 0:
+                    # Filter out tiny/zero spacings BEFORE calculating mean
+                    spacings_filtered = spacings[spacings > 1e-10]
+                    if len(spacings_filtered) > 0:
+                        mean_spacing = np.mean(spacings_filtered)
 
-                    if mean_spacing > 1e-10:
-                        normalized_spacings = spacings / mean_spacing  # Normalize original spacings
-                        # Filter *again* for stats/plotting if needed (e.g., std dev of s>0)
-                        norm_spacings_positive = normalized_spacings[normalized_spacings > 1e-10]
+                        if mean_spacing > 1e-10:
+                            normalized_spacings = spacings / mean_spacing  # Normalize original spacings
+                            # Filter *again* for stats/plotting if needed (e.g., std dev of s>0)
+                            norm_spacings_positive = normalized_spacings[normalized_spacings > 1e-10]
 
-                        if len(norm_spacings_positive) > 0:
-                            std_dev_norm = np.std(norm_spacings_positive)
-                            print(f"  Std Dev of Normalized Spacings for {target_layer_name} (s > 1e-10): {std_dev_norm:.4f}")
-                            self.stats['results'][target_layer_name]['std_dev_norm_spacing_list'].append(std_dev_norm)
-                            self.stats['results'][target_layer_name]['last_normalized_spacings'] = normalized_spacings  # Store all norm. spacings
-                            return True
+                            if len(norm_spacings_positive) > 0:
+                                std_dev_norm = np.std(norm_spacings_positive)
+                                print(f"  Std Dev of Normalized Spacings for {target_layer_name} (s > 1e-10): {std_dev_norm:.4f}")
+                                self.stats['results'][target_layer_name]['std_dev_norm_spacing_list'].append(std_dev_norm)
+                                self.stats['results'][target_layer_name]['last_normalized_spacings'] = normalized_spacings  # Store all norm. spacings
+                                return True
+                            else:
+                                print(f"  No positive normalized spacings found for {target_layer_name} std dev calculation.")
                         else:
-                            print(f"  No positive normalized spacings found for {target_layer_name} std dev calculation.")
+                            print(f"  Mean spacing for {target_layer_name} is too small for normalization.")
                     else:
-                        print(f"  Mean spacing for {target_layer_name} is too small for normalization.")
+                        print(f"  No spacings > 1e-10 found for {target_layer_name}.")
                 else:
-                    print(f"  No spacings > 1e-10 found for {target_layer_name}.")
+                    print(f"  Not enough spacings calculated for {target_layer_name}.")
             else:
-                print(f"  Not enough spacings calculated for {target_layer_name}.")
-        else:
-            print(f"  Not enough eigenvalues ({len(eigenvalues)}) for {target_layer_name} spacing analysis.")
+                print(f"  Not enough eigenvalues ({len(eigenvalues)}) for {target_layer_name} spacing analysis.")
+                
+        except RuntimeError as e:
+            print(f"  Error during level spacing computation for {target_layer_name}: {e}")
         
         return False
     
-    def _analyze_singular_values(self, matrix, target_layer_name):
+    def _analyze_singular_values(self, matrix_tensor, target_layer_name):
         """Analyze singular values of the matrix"""
         try:
             # Normalize matrix to make comparisons more meaningful
             if self.analyze_W:
-                W_centered = matrix - np.mean(matrix)
-                sigma_W_centered = np.std(W_centered)
+                W_centered = matrix_tensor - torch.mean(matrix_tensor)
+                sigma_W_centered = torch.std(W_centered)
                 if sigma_W_centered > 1e-15:
-                    matrix_norm = W_centered / (sigma_W_centered * np.sqrt(min(matrix.shape)))
+                    # Use sqrt(max(shape)) for normalization to match MP theory
+                    # where n is the number of samples (larger dimension)
+                    max_dim = torch.tensor(max(matrix_tensor.shape), device=self.device, dtype=torch.float)
+                    matrix_norm = W_centered / (sigma_W_centered * torch.sqrt(max_dim))
                 else:
                     print(f"  Skipping {target_layer_name} SVD: Std dev near zero.")
                     matrix_norm = None
             else:  # analyze_delta_W
-                sigma_delta_w = np.std(matrix)
+                sigma_delta_w = torch.std(matrix_tensor)
                 if sigma_delta_w > 1e-15:
-                    matrix_norm = matrix / (sigma_delta_w * np.sqrt(min(matrix.shape)))
+                    # Use sqrt(max(shape)) for normalization to match MP theory
+                    max_dim = torch.tensor(max(matrix_tensor.shape), device=self.device, dtype=torch.float)
+                    matrix_norm = matrix_tensor / (sigma_delta_w * torch.sqrt(max_dim))
                 else:
                     print(f"  Skipping {target_layer_name} SVD: Std dev near zero.")
                     matrix_norm = None
             
             if matrix_norm is not None:
-                # Compute singular values
-                singular_values = np.linalg.svd(matrix_norm, compute_uv=False)
-                print(f"  Calculated {len(singular_values)} normalized singular values for {target_layer_name}.")
-                self.stats['results'][target_layer_name]['singular_values_list'].append(singular_values)
-                self.stats['results'][target_layer_name]['last_singular_values'] = singular_values
+                # Compute singular values on GPU
+                singular_values = torch.linalg.svdvals(matrix_norm)
+                
+                # Move to CPU for storage and plotting
+                singular_values_cpu = singular_values.cpu().numpy()
+                
+                print(f"  Calculated {len(singular_values_cpu)} normalized singular values for {target_layer_name}.")
+                self.stats['results'][target_layer_name]['singular_values_list'].append(singular_values_cpu)
+                self.stats['results'][target_layer_name]['last_singular_values'] = singular_values_cpu
                 return True
         
-        except np.linalg.LinAlgError:
-            print(f"  Error: SVD computation failed for {target_layer_name}. Skipping singular value analysis.")
+        except RuntimeError as e:
+            print(f"  Error: SVD computation failed for {target_layer_name}: {e}")
         except Exception as e:
             print(f"  Error during singular value computation for {target_layer_name}: {e}")
         
