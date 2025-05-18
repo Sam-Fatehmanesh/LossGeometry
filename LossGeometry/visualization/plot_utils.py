@@ -32,11 +32,12 @@ class AnalysisPlotter:
         Plot loss over batches
         
         Args:
-            batch_numbers (list): Batch numbers
-            loss_values (list): Loss values
+            batch_numbers (list or array): Batch numbers
+            loss_values (list or array): Loss values
             plot_title (str): Optional custom title for the plot
         """
-        if not loss_values:
+        # Check if loss_values exists and has elements
+        if loss_values is None or len(loss_values) == 0:
             print("No loss values to plot.")
             return
         
@@ -84,7 +85,7 @@ class AnalysisPlotter:
             matrix_description (str): Description of the matrix type
             runs (int): Number of runs the results are averaged over
         """
-        if not results_data:
+        if results_data is None or len(results_data) == 0:
             print(f"No eigenvalues data for {layer_name}. Skipping plot.")
             return
         
@@ -184,25 +185,31 @@ class AnalysisPlotter:
             else:
                 # Default shape if not available
                 m, n = (1024, 1024)
-                
-            # Calculate fluctuation scale for the edge (~N^{-2/3})
-            N = max(m, n)  # Use max dimension for scaling
-            scale_factor = edge_position * N**(-2/3)
             
-            # Create range for displaying Tracy-Widom around the edge
-            # Need enough zoom to show the shape
-            x_tw = np.linspace(edge_position - 5*scale_factor, edge_position + 3*scale_factor, 300)
+            # Calculate the ratio for scaling
+            ratio = min(m, n) / max(m, n)
+            
+            # Calculate fluctuation scale with the new formula
+            term_N_dependency = max(m, n)**(-2/3)  # N_norm^(-2/3)
+            term_edge_ratio_dependency = (1 + np.sqrt(ratio))**(1/3)
+            term_ratio_only_dependency = ratio**(-1/6)
+            
+            scale_factor = (0.5 * term_N_dependency * term_edge_ratio_dependency * term_ratio_only_dependency) 
+            print(f"Scale factor: {scale_factor}")
+            
+            # Create range for displaying Tracy-Widom entire range
+            x_tw = np.linspace(-1.1,1.1,1000)
             
             # Calculate Tracy-Widom PDF values
-            tw_args = (x_tw - edge_position) / scale_factor
-            pdf_tw = tw_dist.pdf(tw_args) / scale_factor
+            tw_args = (x_tw - edge_position)  /(scale_factor*np.sqrt(n))
+            pdf_tw = tw_dist.pdf(tw_args) #/ (scale_factor * np.sqrt(n*m))
             
             # Scale height for visibility on the plot
             # max_pdf = np.max(pdf_tw) if len(pdf_tw) > 0 and np.max(pdf_tw) > 0 else 1.0
             # target_height = 0.5  # Adjust based on histogram height
             # pdf_tw = pdf_tw * (target_height / max_pdf)
             
-            num_bins = max(min(len(eigenvalues)//10, 1000), 30)  # Adaptive binning
+            num_bins = max(min(len(eigenvalues)//10, 256), 30)  # Adaptive binning
             ax.hist(eigenvalues, bins=num_bins, density=True, alpha=0.75, label=f'Empirical ρ(λ)', range=common_plot_range)
             ax.plot(x_circular_fit, rho_circular_fit, 'r--', linewidth=1.5, label=f'Circular Law (R={R_fit:.2f})')
             
@@ -340,18 +347,18 @@ class AnalysisPlotter:
         
     def plot_singular_values(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description, runs=1):
         """
-        Plot singular value distribution
+        Plot singular value evolution
         
         Args:
             layer_name (str): Name of the layer
-            layer_shape (tuple): Shape of the layer
+            layer_shape (tuple): Shape of the layer (m, n)
             results_data (list): List of singular value arrays
             batch_numbers (list): Batch numbers
             matrix_description (str): Description of the matrix type
             runs (int): Number of runs the results are averaged over
         """
-        if not results_data:
-            print(f"No singular value data for {layer_name}. Skipping plot.")
+        if results_data is None or len(results_data) == 0:
+            print(f"No singular values data for {layer_name}. Skipping plot.")
             return
             
         run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
@@ -478,7 +485,7 @@ class AnalysisPlotter:
             pdf_tw = pdf_tw * (target_height / max_pdf)
             
             # Plot histogram of singular values
-            num_bins = max(min(len(sv_values)//10, 75), 30)  # Adaptive binning
+            num_bins = max(min(len(sv_values)//10, 256), 30)  # Adaptive binning
             ax.hist(sv_values, bins=num_bins, density=True, alpha=0.75, 
                     label='Empirical density', range=common_plot_range)
             

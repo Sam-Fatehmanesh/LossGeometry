@@ -2,6 +2,7 @@ import h5py
 import os
 import numpy as np
 import json
+import re
 from datetime import datetime
 
 def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs=1):
@@ -63,7 +64,9 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
             
             # Save shape
             target_param = model.get_parameter(layer_name)
-            layer_group.attrs['shape'] = str(target_param.shape)
+            # Save as a tuple representation directly instead of torch.Size string
+            shape_tuple = tuple(target_param.shape)
+            layer_group.attrs['shape'] = str(shape_tuple)
             
             # Save eigenvalues if they exist
             if 'eigenvalues_list' in layer_data and layer_data['eigenvalues_list']:
@@ -137,9 +140,26 @@ def load_analysis_data(h5_path):
         if 'layers' in f:
             for layer_name in f['layers']:
                 layer_group = f['layers'][layer_name]
-                data['results'][layer_name] = {
-                    'shape': eval(layer_group.attrs['shape']) if 'shape' in layer_group.attrs else None
-                }
+                
+                # Safely parse the shape string without using eval()
+                shape = None
+                if 'shape' in layer_group.attrs:
+                    shape_str = layer_group.attrs['shape']
+                    # Handle torch.Size format or tuple format
+                    if 'torch.Size' in shape_str:
+                        # Extract numbers from torch.Size([dim1, dim2]) format
+                        nums = re.findall(r'\d+', shape_str)
+                        shape = tuple(int(num) for num in nums)
+                    else:
+                        # Should be a string representation of a tuple like "(dim1, dim2)"
+                        try:
+                            shape = eval(shape_str)  # Safe to eval a tuple string
+                        except:
+                            # Fallback to regex extraction if eval fails
+                            nums = re.findall(r'\d+', shape_str)
+                            shape = tuple(int(num) for num in nums)
+                
+                data['results'][layer_name] = {'shape': shape}
                 
                 # Load eigenvalues
                 if 'eigenvalues' in layer_group:
