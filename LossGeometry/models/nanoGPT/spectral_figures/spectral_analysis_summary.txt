@@ -1,0 +1,161 @@
+SPECTRAL ANALYSIS SUMMARY
+========================
+
+TRAINING INFORMATION
+Total batches analyzed: 3
+Final batch: 5
+Matrix type: W
+Analysis type: Density
+Initial loss: 10.8378
+Final loss: 10.8378
+Loss change: 0.00%
+
+LAYER METRICS
+
+transformer.h.0.attn.c_attn.weight:
+  max_singular_value_initial: 1.574735
+  max_singular_value_final: 1.574749
+  max_singular_value_change_pct: 0.00%
+  effective_rank_initial: 0.607295
+  effective_rank_final: 0.607290
+  effective_rank_change_pct: -0.00%
+
+transformer.h.0.attn.c_proj.weight:
+  max_eigenvalue_initial: 1.030012
+  max_eigenvalue_final: 1.030311
+  max_eigenvalue_change_pct: 0.03%
+  max_singular_value_initial: 1.956793
+  max_singular_value_final: 1.956174
+  max_singular_value_change_pct: -0.03%
+  effective_rank_initial: 0.433357
+  effective_rank_final: 0.433499
+  effective_rank_change_pct: 0.03%
+
+transformer.h.1.attn.c_attn.weight:
+  max_singular_value_initial: 1.554616
+  max_singular_value_final: 1.554477
+  max_singular_value_change_pct: -0.01%
+  effective_rank_initial: 0.615127
+  effective_rank_final: 0.615182
+  effective_rank_change_pct: 0.01%
+
+transformer.h.1.attn.c_proj.weight:
+  max_eigenvalue_initial: 1.010532
+  max_eigenvalue_final: 1.010108
+  max_eigenvalue_change_pct: -0.04%
+  max_singular_value_initial: 2.001792
+  max_singular_value_final: 2.002100
+  max_singular_value_change_pct: 0.02%
+  effective_rank_initial: 0.424017
+  effective_rank_final: 0.423945
+  effective_rank_change_pct: -0.02%
+
+transformer.h.2.attn.c_attn.weight:
+  max_singular_value_initial: 1.557427
+  max_singular_value_final: 1.557404
+  max_singular_value_change_pct: -0.00%
+  effective_rank_initial: 0.614129
+  effective_rank_final: 0.614138
+  effective_rank_change_pct: 0.00%
+
+transformer.h.2.attn.c_proj.weight:
+  max_eigenvalue_initial: 1.025555
+  max_eigenvalue_final: 1.027640
+  max_eigenvalue_change_pct: 0.20%
+  max_singular_value_initial: 1.973729
+  max_singular_value_final: 1.973751
+  max_singular_value_change_pct: 0.00%
+  effective_rank_initial: 0.430239
+  effective_rank_final: 0.430232
+  effective_rank_change_pct: -0.00%
+
+transformer.h.3.attn.c_attn.weight:
+  max_singular_value_initial: 1.562736
+  max_singular_value_final: 1.562708
+  max_singular_value_change_pct: -0.00%
+  effective_rank_initial: 0.611536
+  effective_rank_final: 0.611547
+  effective_rank_change_pct: 0.00%
+
+transformer.h.3.attn.c_proj.weight:
+  max_eigenvalue_initial: 1.065248
+  max_eigenvalue_final: 1.066185
+  max_eigenvalue_change_pct: 0.09%
+  max_singular_value_initial: 1.968729
+  max_singular_value_final: 1.968652
+  max_singular_value_change_pct: -0.00%
+  effective_rank_initial: 0.431147
+  effective_rank_final: 0.431160
+  effective_rank_change_pct: 0.00%
+
+transformer.h.0.mlp.c_fc.weight:
+  max_singular_value_initial: 1.486742
+  max_singular_value_final: 1.486776
+  max_singular_value_change_pct: 0.00%
+  effective_rank_initial: 0.650735
+  effective_rank_final: 0.650721
+  effective_rank_change_pct: -0.00%
+
+transformer.h.0.mlp.c_proj.weight:
+  max_singular_value_initial: 1.495031
+  max_singular_value_final: 1.494774
+  max_singular_value_change_pct: -0.02%
+  effective_rank_initial: 0.647048
+  effective_rank_final: 0.647158
+  effective_rank_change_pct: 0.02%
+
+transformer.h.1.mlp.c_fc.weight:
+  max_singular_value_initial: 1.477974
+  max_singular_value_final: 1.477945
+  max_singular_value_change_pct: -0.00%
+  effective_rank_initial: 0.654643
+  effective_rank_final: 0.654656
+  effective_rank_change_pct: 0.00%
+
+transformer.h.1.mlp.c_proj.weight:
+  max_singular_value_initial: 1.500752
+  max_singular_value_final: 1.500765
+  max_singular_value_change_pct: 0.00%
+  effective_rank_initial: 0.644559
+  effective_rank_final: 0.644553
+  effective_rank_change_pct: -0.00%
+
+transformer.h.2.mlp.c_fc.weight:
+  max_singular_value_initial: 1.490726
+  max_singular_value_final: 1.490726
+  max_singular_value_change_pct: 0.00%
+  effective_rank_initial: 0.649024
+  effective_rank_final: 0.649025
+  effective_rank_change_pct: 0.00%
+
+transformer.h.2.mlp.c_proj.weight:
+  max_singular_value_initial: 1.494381
+  max_singular_value_final: 1.494333
+  max_singular_value_change_pct: -0.00%
+  effective_rank_initial: 0.647468
+  effective_rank_final: 0.647490
+  effective_rank_change_pct: 0.00%
+
+transformer.h.3.mlp.c_fc.weight:
+  max_singular_value_initial: 1.499321
+  max_singular_value_final: 1.499344
+  max_singular_value_change_pct: 0.00%
+  effective_rank_initial: 0.645193
+  effective_rank_final: 0.645184
+  effective_rank_change_pct: -0.00%
+
+transformer.h.3.mlp.c_proj.weight:
+  max_singular_value_initial: 1.500989
+  max_singular_value_final: 1.500863
+  max_singular_value_change_pct: -0.01%
+  effective_rank_initial: 0.644298
+  effective_rank_final: 0.644354
+  effective_rank_change_pct: 0.01%
+
+transformer.wte.weight:
+  max_singular_value_initial: 1.069113
+  max_singular_value_final: 1.069102
+  max_singular_value_change_pct: -0.00%
+  effective_rank_initial: 0.934760
+  effective_rank_final: 0.934769
+  effective_rank_change_pct: 0.00%

@@ -1,0 +1,15 @@
+{"time":"2025-05-18T16:56:37.421759-07:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/Users/adarshkumarappan/Impt/Caltech/CAIA/LossGeometry/LossGeometry/models/nanoGPT/wandb/offline-run-20250518_165637-qhkc4eg6/logs/debug-core.log"}
+{"time":"2025-05-18T16:56:37.791946-07:00","level":"WARN","msg":"GraphQL client is nil, skipping feature loading"}
+{"time":"2025-05-18T16:56:37.792291-07:00","level":"INFO","msg":"created new stream","id":"qhkc4eg6"}
+{"time":"2025-05-18T16:56:37.792374-07:00","level":"INFO","msg":"stream: started","id":"qhkc4eg6"}
+{"time":"2025-05-18T16:56:37.792482-07:00","level":"INFO","msg":"writer: Do: started","stream_id":"qhkc4eg6"}
+{"time":"2025-05-18T16:56:37.792559-07:00","level":"INFO","msg":"handler: started","stream_id":"qhkc4eg6"}
+{"time":"2025-05-18T16:56:37.792575-07:00","level":"INFO","msg":"sender: started","stream_id":"qhkc4eg6"}
+{"time":"2025-05-18T16:56:37.797475-07:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-05-18T16:57:35.751711-07:00","level":"INFO","msg":"stream: closing","id":"qhkc4eg6"}
+{"time":"2025-05-18T16:57:35.7518-07:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-05-18T16:57:35.751878-07:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-05-18T16:57:35.752121-07:00","level":"INFO","msg":"handler: closed","stream_id":"qhkc4eg6"}
+{"time":"2025-05-18T16:57:35.752155-07:00","level":"INFO","msg":"writer: Close: closed","stream_id":"qhkc4eg6"}
+{"time":"2025-05-18T16:57:35.75217-07:00","level":"INFO","msg":"sender: closed","stream_id":"qhkc4eg6"}
+{"time":"2025-05-18T16:57:35.75239-07:00","level":"INFO","msg":"stream: closed","id":"qhkc4eg6"}
