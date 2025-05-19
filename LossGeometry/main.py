@@ -14,6 +14,8 @@ from LossGeometry.datasets.mnist_dataset import load_mnist
 from LossGeometry.analysis.spectral_analysis import SpectralAnalyzer
 from LossGeometry.visualization.plot_utils import AnalysisPlotter
 from LossGeometry.utils.io_utils import save_analysis_data, get_experiment_dir
+from LossGeometry.models.resnet import CustomResNet18
+from LossGeometry.models.vit import CustomViT
 
 def parse_args():
     """Parse command line arguments"""
@@ -41,6 +43,23 @@ def parse_args():
     
     # Output parameters
     parser.add_argument('--experiment_dir', type=str, default='experiments', help='Base directory for experiments')
+    # Model selection
+    parser.add_argument('--model', type=str, choices=['mlp','resnet18','vit'], default='mlp',
+                        help='Which model to use: mlp, resnet18, or vit')
+    # ResNet-specific parameters
+    parser.add_argument('--resnet_input_channels', type=int, default=1,
+                        help='Number of input channels for ResNet')
+    parser.add_argument('--resnet_init_conv', action='store_true',
+                        help='Apply Gaussian init to ResNet convolutional layers')
+    # ViT-specific parameters
+    parser.add_argument('--vit_image_size', type=int, default=28, help='Image size for ViT patches')
+    parser.add_argument('--vit_patch_size', type=int, default=7, help='Patch size for ViT')
+    parser.add_argument('--vit_embed_dim', type=int, default=64, help='Embedding dimension for ViT')
+    parser.add_argument('--vit_depth', type=int, default=2, help='Number of Transformer encoder layers for ViT')
+    parser.add_argument('--vit_num_heads', type=int, default=4, help='Number of attention heads in ViT')
+    parser.add_argument('--vit_mlp_ratio', type=float, default=2.0, help='Ratio of MLP hidden dim to embed_dim in ViT')
+    parser.add_argument('--vit_input_channels', type=int, default=1, help='Number of input channels for ViT')
+    parser.add_argument('--vit_init_fc', action='store_true', help='Gaussian init for ViT classification head')
     
     args = parser.parse_args()
     
@@ -69,12 +88,34 @@ def train_and_analyze(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Get a reference model to determine target layers
-    reference_model = SimpleMLP(
-        input_size=args.input_size,
-        hidden_size=args.hidden_size,
-        output_size=args.output_size,
-        num_hidden_layers=args.num_hidden_layers
-    )
+    if args.model == 'mlp':
+        reference_model = SimpleMLP(
+            input_size=args.input_size,
+            hidden_size=args.hidden_size,
+            output_size=args.output_size,
+            num_hidden_layers=args.num_hidden_layers
+        )
+    elif args.model == 'resnet18':
+        reference_model = CustomResNet18(
+            num_classes=args.output_size,
+            input_channels=args.resnet_input_channels,
+            gaussian_init_fc=True,
+            gaussian_init_conv=args.resnet_init_conv
+        )
+    elif args.model == 'vit':
+        reference_model = CustomViT(
+            num_classes=args.output_size,
+            image_size=args.vit_image_size,
+            patch_size=args.vit_patch_size,
+            embed_dim=args.vit_embed_dim,
+            depth=args.vit_depth,
+            num_heads=args.vit_num_heads,
+            mlp_ratio=args.vit_mlp_ratio,
+            input_channels=args.vit_input_channels,
+            gaussian_init_fc=args.vit_init_fc
+        )
+    else:
+        raise ValueError(f"Unknown model type: {args.model}")
     
     # Get target layers for analysis
     target_layers = reference_model.get_target_layers()
@@ -124,12 +165,34 @@ def train_and_analyze(args):
         run_loop.set_description(f"Run {run_idx+1}/{args.num_runs}")
         
         # Initialize model fresh for this run
-        model = SimpleMLP(
-            input_size=args.input_size,
-            hidden_size=args.hidden_size,
-            output_size=args.output_size,
-            num_hidden_layers=args.num_hidden_layers
-        )
+        if args.model == 'mlp':
+            model = SimpleMLP(
+                input_size=args.input_size,
+                hidden_size=args.hidden_size,
+                output_size=args.output_size,
+                num_hidden_layers=args.num_hidden_layers
+            )
+        elif args.model == 'resnet18':
+            model = CustomResNet18(
+                num_classes=args.output_size,
+                input_channels=args.resnet_input_channels,
+                gaussian_init_fc=True,
+                gaussian_init_conv=args.resnet_init_conv
+            )
+        elif args.model == 'vit':
+            model = CustomViT(
+                num_classes=args.output_size,
+                image_size=args.vit_image_size,
+                patch_size=args.vit_patch_size,
+                embed_dim=args.vit_embed_dim,
+                depth=args.vit_depth,
+                num_heads=args.vit_num_heads,
+                mlp_ratio=args.vit_mlp_ratio,
+                input_channels=args.vit_input_channels,
+                gaussian_init_fc=args.vit_init_fc
+            )
+        else:
+            raise ValueError(f"Unknown model type: {args.model}")
         model.to(device)
         
         # Setup optimizer and loss

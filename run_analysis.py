@@ -35,6 +35,23 @@ def main():
     
     # Output parameters
     parser.add_argument('--experiment_dir', type=str, default='experiments', help='Base directory for experiments')
+    # Model selection
+    parser.add_argument('--model', type=str, choices=['mlp','resnet18','vit'], default='mlp',
+                        help='Which model to use: mlp, resnet18, or vit')
+    # ResNet-specific parameters
+    parser.add_argument('--resnet_input_channels', type=int, default=1,
+                        help='Number of input channels for ResNet')
+    parser.add_argument('--resnet_init_conv', action='store_true',
+                        help='Apply Gaussian init to ResNet convolutional layers')
+    # ViT-specific parameters
+    parser.add_argument('--vit_image_size', type=int, default=28, help='Image size for ViT patches')
+    parser.add_argument('--vit_patch_size', type=int, default=7, help='Patch size for ViT')
+    parser.add_argument('--vit_embed_dim', type=int, default=64, help='Embedding dimension for ViT')
+    parser.add_argument('--vit_depth', type=int, default=2, help='Number of Transformer encoder layers for ViT')
+    parser.add_argument('--vit_num_heads', type=int, default=4, help='Number of attention heads in ViT')
+    parser.add_argument('--vit_mlp_ratio', type=float, default=2.0, help='Ratio of MLP hidden dim to embed_dim in ViT')
+    parser.add_argument('--vit_input_channels', type=int, default=1, help='Number of input channels for ViT')
+    parser.add_argument('--vit_init_fc', action='store_true', help='Apply Gaussian init to ViT classification head')
     
     args = parser.parse_args()
     
