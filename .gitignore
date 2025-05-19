@@ -13,3 +13,4 @@ __pycache__/
 *.h5
 .env
 env
+LossGeometry/models/nanoGPT/wandb
