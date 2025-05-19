@@ -6,6 +6,7 @@ distributions for the weight matrices of the nanoGPT model.
 
 Examples:
     $ python analyze_spectral_results.py --results_dir out-spectral/spectral --output_dir figures
+    $ python analyze_spectral_results.py --h5_file out-spectral/20240515_123456/20240515_123456_analysis_data.h5 --output_dir figures
 """
 
 import os
@@ -19,10 +20,18 @@ import seaborn as sns
 from tqdm import tqdm
 import json
 from pathlib import Path
+import h5py
+import glob
+from datetime import datetime
 
 # Set style for plots
 plt.style.use('ggplot')
 sns.set_theme(style="whitegrid")
+
+# Add parent directory to path for io_utils import
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+from LossGeometry.utils.io_utils import load_analysis_data
+from LossGeometry.visualization.plot_utils import AnalysisPlotter
 
 # JSON encoder to handle numpy types
 class NumpyEncoder(json.JSONEncoder):
@@ -37,21 +46,29 @@ class NumpyEncoder(json.JSONEncoder):
 
 def find_latest_results(results_dir):
     """Find the latest spectral analysis results file"""
+    # First check for PT files
     result_files = [f for f in os.listdir(results_dir) if f.startswith('spectral_stats_') and f.endswith('.pt')]
-    if len(result_files) == 0:
-        return None
+    if len(result_files) > 0:
+        # If we have a final file, use that
+        if 'spectral_stats_final.pt' in result_files:
+            return os.path.join(results_dir, 'spectral_stats_final.pt'), 'pt'
+        
+        # Otherwise sort by iteration number and take the latest
+        iter_nums = [int(f.split('_')[-1].split('.')[0]) for f in result_files if f != 'spectral_stats_final.pt']
+        if iter_nums:
+            latest_iter = max(iter_nums)
+            return os.path.join(results_dir, f'spectral_stats_{latest_iter}.pt'), 'pt'
     
-    # If we have a final file, use that
-    if 'spectral_stats_final.pt' in result_files:
-        return os.path.join(results_dir, 'spectral_stats_final.pt')
+    # Then check for HDF5 files
+    h5_pattern = os.path.join(results_dir, "**", "*_analysis_data.h5")
+    h5_files = glob.glob(h5_pattern, recursive=True)
     
-    # Otherwise sort by iteration number and take the latest
-    iter_nums = [int(f.split('_')[-1].split('.')[0]) for f in result_files if f != 'spectral_stats_final.pt']
-    if not iter_nums:
-        return None
+    if h5_files:
+        # Sort by modification time (newest first)
+        h5_files.sort(key=os.path.getmtime, reverse=True)
+        return h5_files[0], 'h5'
     
-    latest_iter = max(iter_nums)
-    return os.path.join(results_dir, f'spectral_stats_{latest_iter}.pt')
+    return None, None
 
 def plot_eigenvalue_histograms(stats, output_dir, last_n=1, selected_layers=None):
     """
@@ -506,63 +523,144 @@ def generate_summary_report(stats, metrics, output_dir):
                         f.write(f"  {metric_name}: {value:.6f}\n")
 
 def main(args):
-    """Main function to analyze spectral results"""
-    # Find the latest results file if not specified
-    if args.results_file:
-        results_file = args.results_file
-    else:
-        results_file = find_latest_results(args.results_dir)
-        if not results_file:
-            print(f"No spectral analysis results found in {args.results_dir}")
-            return
+    """
+    Main function for analyzing spectral results.
     
-    print(f"Analyzing spectral results from: {results_file}")
+    Args:
+        args: Command line arguments
+    """
+    # Generate timestamp for unique output filenames
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Load the results
-    stats = torch.load(results_file, weights_only=False)
-    print(f"Loaded stats from {len(stats['batch'])} batches for {len(stats['results'])} layers")
-    
-    # Create output directory if needed
+    # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # Create subdirectories for different types of plots
-    eigenvalue_dir = os.path.join(args.output_dir, 'eigenvalues')
-    singular_value_dir = os.path.join(args.output_dir, 'singular_values')
-    timeline_dir = os.path.join(args.output_dir, 'timeline')
-    comparison_dir = os.path.join(args.output_dir, 'comparison')
+    # Initialize the AnalysisPlotter
+    plotter = AnalysisPlotter(args.output_dir, timestamp, dpi=300)
     
-    # Plot eigenvalue histograms for each layer
-    print("Generating eigenvalue distribution plots...")
-    plot_eigenvalue_histograms(stats, eigenvalue_dir, args.last_snapshots)
+    # Load the spectral analysis data
+    if args.h5_file:
+        print(f"Loading data from H5 file: {args.h5_file}")
+        data = load_analysis_data(args.h5_file)
+    else:
+        # Find the latest results file
+        latest_file, file_type = find_latest_results(args.results_dir)
+        if latest_file is None:
+            print(f"No results found in directory: {args.results_dir}")
+            return
+        
+        print(f"Loading data from file: {latest_file} (type: {file_type})")
+        if file_type == 'pt':
+            data = torch.load(latest_file)
+        else:  # h5
+            data = load_analysis_data(latest_file)
     
-    # Plot singular value histograms for each layer
-    print("Generating singular value distribution plots...")
-    plot_singular_value_histograms(stats, singular_value_dir, args.last_snapshots)
+    # Extract data for plotting
+    batch_numbers = data.get('batch_numbers', data.get('batch', []))
+    loss_values = data.get('loss_values', [])
     
-    # Plot evolution of spectral properties over time
-    print("Analyzing spectral properties over time...")
-    metrics = plot_spectral_properties_over_time(stats, timeline_dir)
+    # Plot loss if available
+    if loss_values and batch_numbers:
+        plotter.plot_loss(batch_numbers, loss_values, plot_title="nanoGPT Training Loss")
     
-    # Compare weight matrices and weight updates
-    print("Comparing weight matrices and weight updates...")
-    analyze_weight_delta_differences(stats, comparison_dir)
+    # Selected layers filtering
+    all_layers = list(data['results'].keys())
+    selected_layers = args.selected_layers if args.selected_layers else all_layers
     
-    # Generate summary report
-    print("Generating summary report...")
-    generate_summary_report(stats, metrics, args.output_dir)
+    # Plot spectral analysis for each selected layer
+    for layer_name in selected_layers:
+        if layer_name not in data['results']:
+            print(f"Layer '{layer_name}' not found in results. Available layers: {all_layers}")
+            continue
+            
+        layer_stats = data['results'][layer_name]
+        
+        # Extract layer shape information
+        layer_shape = None
+        if 'shape' in layer_stats:
+            # If shape is stored directly
+            layer_shape = layer_stats['shape']
+        elif 'eigenvalues_list' in layer_stats and layer_stats['eigenvalues_list']:
+            # Estimate shape from eigenvalue count for square matrices
+            for eig_array in layer_stats['eigenvalues_list']:
+                if eig_array is not None and len(eig_array) > 0:
+                    n = len(eig_array)
+                    layer_shape = (n, n)  # Assume square
+                    break
+        
+        # Convert shape to tuple if it's a string representation
+        if isinstance(layer_shape, str) and layer_shape.startswith('(') and layer_shape.endswith(')'):
+            try:
+                # Parse string like "(512, 512)" into tuple (512, 512)
+                shape_str = layer_shape.strip('() ')
+                shape_parts = [int(x.strip()) for x in shape_str.split(',')]
+                if len(shape_parts) >= 2:
+                    layer_shape = tuple(shape_parts)
+            except (ValueError, SyntaxError):
+                # If parsing fails, keep as string
+                pass
+        
+        print(f"Processing layer: {layer_name}, Shape: {layer_shape}")
+        
+        # Matrix description for plots
+        matrix_description = f"Weight Matrix - {layer_name}"
+        
+        # Plot eigenvalue distributions if available
+        if 'eigenvalues_list' in layer_stats and layer_stats['eigenvalues_list']:
+            plotter.plot_spectral_density(
+                layer_name, 
+                layer_shape, 
+                layer_stats['eigenvalues_list'], 
+                batch_numbers, 
+                matrix_description
+            )
+        
+        # Plot singular value distributions if available
+        if 'singular_values_list' in layer_stats and layer_stats['singular_values_list']:
+            plotter.plot_singular_values(
+                layer_name, 
+                layer_shape, 
+                layer_stats['singular_values_list'], 
+                batch_numbers, 
+                matrix_description
+            )
+        
+        # Plot level spacing if available
+        level_spacing_std_key = next((k for k in ['level_spacing_std_list', 'std_dev_norm_spacing_list'] 
+                                     if k in layer_stats), None)
+        level_spacing_last_key = next((k for k in ['level_spacing_last', 'last_normalized_spacings'] 
+                                      if k in layer_stats), None)
+        
+        if level_spacing_std_key and level_spacing_last_key and layer_stats[level_spacing_std_key]:
+            plotter.plot_level_spacing(
+                layer_name,
+                layer_shape,
+                layer_stats[level_spacing_std_key],
+                layer_stats[level_spacing_last_key],
+                batch_numbers,
+                matrix_description
+            )
     
-    print(f"Analysis complete. Results saved to {args.output_dir}")
+    print(f"All plots have been saved to {args.output_dir}")
+    
+    # Generate a summary report
+    metrics = {}
+    metrics_file = os.path.join(args.output_dir, f"{timestamp}_metrics_summary.json")
+    with open(metrics_file, 'w') as f:
+        json.dump(metrics, f, cls=NumpyEncoder, indent=2)
+    
+    print(f"Summary metrics saved to {metrics_file}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze spectral properties of nanoGPT training")
-    parser.add_argument("--results_dir", type=str, default="out-spectral/spectral", 
-                        help="Directory containing spectral analysis results")
-    parser.add_argument("--results_file", type=str, default=None,
-                        help="Specific results file to analyze (default: use latest in results_dir)")
-    parser.add_argument("--output_dir", type=str, default="spectral_figures",
-                        help="Directory to save analysis results and figures")
-    parser.add_argument("--last_snapshots", type=int, default=3,
-                        help="Number of snapshots to visualize from the end of training")
+    parser = argparse.ArgumentParser(description="Analyze spectral properties of nanoGPT model")
+    parser.add_argument('--results_dir', type=str, default='out-spectral/spectral',
+                        help='Directory containing spectral analysis results')
+    parser.add_argument('--h5_file', type=str, default=None,
+                        help='Direct path to HDF5 file with spectral analysis results')
+    parser.add_argument('--output_dir', type=str, default='figures',
+                        help='Directory to save plots and analysis results')
+    parser.add_argument('--selected_layers', type=str, nargs='+', default=None,
+                        help='Only analyze these specific layers (optional)')
     args = parser.parse_args()
     
     main(args) 

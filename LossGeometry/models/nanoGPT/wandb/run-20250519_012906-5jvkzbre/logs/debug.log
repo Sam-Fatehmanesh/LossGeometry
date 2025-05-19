@@ -1,0 +1,23 @@
+2025-05-19 01:29:06,487 INFO    MainThread:11097 [wandb_setup.py:_flush():70] Current SDK version is 0.19.11
+2025-05-19 01:29:06,487 INFO    MainThread:11097 [wandb_setup.py:_flush():70] Configure stats pid to 11097
+2025-05-19 01:29:06,488 INFO    MainThread:11097 [wandb_setup.py:_flush():70] Loading settings from /root/.config/wandb/settings
+2025-05-19 01:29:06,488 INFO    MainThread:11097 [wandb_setup.py:_flush():70] Loading settings from /workspace/LossGeometry/LossGeometry/models/nanoGPT/wandb/settings
+2025-05-19 01:29:06,488 INFO    MainThread:11097 [wandb_setup.py:_flush():70] Loading settings from environment variables
+2025-05-19 01:29:06,490 INFO    MainThread:11097 [wandb_init.py:setup_run_log_directory():724] Logging user logs to /workspace/LossGeometry/LossGeometry/models/nanoGPT/wandb/run-20250519_012906-5jvkzbre/logs/debug.log
+2025-05-19 01:29:06,490 INFO    MainThread:11097 [wandb_init.py:setup_run_log_directory():725] Logging internal logs to /workspace/LossGeometry/LossGeometry/models/nanoGPT/wandb/run-20250519_012906-5jvkzbre/logs/debug-internal.log
+2025-05-19 01:29:06,491 INFO    MainThread:11097 [wandb_init.py:init():852] calling init triggers
+2025-05-19 01:29:06,492 INFO    MainThread:11097 [wandb_init.py:init():857] wandb.init called with sweep_config: {}
+config: {'out_dir': 'out-spectral', 'eval_interval': 100, 'save_interval': 200, 'log_interval': 10, 'eval_iters': 50, 'always_save_checkpoint': True, 'init_from': 'scratch', 'wandb_log': True, 'wandb_project': 'shakespeare_spectral', 'wandb_run_name': 'nanogpt-shakespeare-spectral', 'dataset': 'pile', 'gradient_accumulation_steps': 1, 'batch_size': 12, 'block_size': 256, 'n_layer': 4, 'n_head': 4, 'n_embd': 256, 'dropout': 0.0, 'bias': False, 'learning_rate': 0.0005, 'max_iters': 2000, 'weight_decay': 0.1, 'beta1': 0.9, 'beta2': 0.95, 'grad_clip': 1.0, 'decay_lr': True, 'warmup_iters': 200, 'lr_decay_iters': 2000, 'min_lr': 5e-05, 'backend': 'nccl', 'device': 'cuda', 'dtype': 'bfloat16', 'compile': False, 'enable_spectral_analysis': True, 'spectral_analysis_interval': 200, '_wandb': {}}
+2025-05-19 01:29:06,492 INFO    MainThread:11097 [wandb_init.py:init():893] starting backend
+2025-05-19 01:29:06,493 INFO    MainThread:11097 [wandb_init.py:init():897] sending inform_init request
+2025-05-19 01:29:06,501 INFO    MainThread:11097 [backend.py:_multiprocessing_setup():101] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2025-05-19 01:29:06,507 INFO    MainThread:11097 [wandb_init.py:init():907] backend started and connected
+2025-05-19 01:29:06,512 INFO    MainThread:11097 [wandb_init.py:init():1005] updated telemetry
+2025-05-19 01:29:06,655 INFO    MainThread:11097 [wandb_init.py:init():1029] communicating run to backend with 90.0 second timeout
+2025-05-19 01:29:06,949 INFO    MainThread:11097 [wandb_init.py:init():1104] starting run threads in backend
+2025-05-19 01:29:07,107 INFO    MainThread:11097 [wandb_run.py:_console_start():2573] atexit reg
+2025-05-19 01:29:07,107 INFO    MainThread:11097 [wandb_run.py:_redirect():2421] redirect: wrap_raw
+2025-05-19 01:29:07,108 INFO    MainThread:11097 [wandb_run.py:_redirect():2490] Wrapping output streams.
+2025-05-19 01:29:07,108 INFO    MainThread:11097 [wandb_run.py:_redirect():2513] Redirects installed.
+2025-05-19 01:29:07,110 INFO    MainThread:11097 [wandb_init.py:init():1150] run started, returning control to user process
+2025-05-19 01:30:55,371 INFO    MsgRouterThr:11097 [mailbox.py:close():129] [no run ID] Closing mailbox, abandoning 1 handles.

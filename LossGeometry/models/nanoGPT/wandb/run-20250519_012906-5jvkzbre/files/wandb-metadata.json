@@ -1,0 +1,45 @@
+{
+  "os": "Linux-6.8.0-52-generic-x86_64-with-glibc2.35",
+  "python": "CPython 3.10.12",
+  "startedAt": "2025-05-19T01:29:06.510489Z",
+  "args": [
+    "config/train_pile_spectral.py"
+  ],
+  "program": "/workspace/LossGeometry/LossGeometry/models/nanoGPT/train_spectral.py",
+  "codePath": "LossGeometry/models/nanoGPT/train_spectral.py",
+  "git": {
+    "remote": "https://github.com/Sam-Fatehmanesh/LossGeometry.git",
+    "commit": "9839648b415284d6b8c60c2ad866b45e783e9840"
+  },
+  "email": "adarshk1234567@gmail.com",
+  "root": "/workspace/LossGeometry/LossGeometry/models/nanoGPT",
+  "host": "541ec1097e15",
+  "executable": "/usr/bin/python",
+  "codePathLocal": "train_spectral.py",
+  "cpu_count": 128,
+  "cpu_count_logical": 256,
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "21474836480",
+      "used": "7975301120"
+    }
+  },
+  "memory": {
+    "total": "2164247994368"
+  },
+  "cpu": {
+    "count": 128,
+    "countLogical": 256
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA A100-SXM4-80GB",
+      "memoryTotal": "85899345920",
+      "cudaCores": 6912,
+      "architecture": "Ampere"
+    }
+  ],
+  "cudaVersion": "12.7"
+}

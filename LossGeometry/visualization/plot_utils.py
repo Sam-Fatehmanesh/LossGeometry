@@ -32,11 +32,12 @@ class AnalysisPlotter:
         Plot loss over batches
         
         Args:
-            batch_numbers (list): Batch numbers
-            loss_values (list): Loss values
+            batch_numbers (list or array): Batch numbers
+            loss_values (list or array): Loss values
             plot_title (str): Optional custom title for the plot
         """
-        if not loss_values:
+        # Check if loss_values exists and has elements
+        if loss_values is None or len(loss_values) == 0:
             print("No loss values to plot.")
             return
         
@@ -84,22 +85,23 @@ class AnalysisPlotter:
             matrix_description (str): Description of the matrix type
             runs (int): Number of runs the results are averaged over
         """
-        if not results_data:
+        if results_data is None or len(results_data) == 0:
             print(f"No eigenvalues data for {layer_name}. Skipping plot.")
             return
         
         run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
         print(f"Plotting Spectral Density evolution for {layer_name} {matrix_description}{run_info}...")
         
-        num_plots_aim = 6
+        num_plots_aim = 4
         num_plots_to_show = min(len(results_data), num_plots_aim)
         if num_plots_to_show <= 0:
             print(f"No density data points available for {layer_name}.")
             return
             
-        ncols = math.ceil(math.sqrt(num_plots_to_show * 1.2))
+        # Create a grid for the plots
+        ncols = 2
         nrows = math.ceil(num_plots_to_show / ncols)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 4.5), squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 5), squeeze=False)
         axes = axes.flatten()
 
         if num_plots_to_show == 1:
@@ -150,73 +152,127 @@ class AnalysisPlotter:
 
         plot_count = 0
         for i, data_idx in enumerate(valid_indices):  # Iterate through valid indices only
+            if plot_count >= len(axes):
+                break  # Safety check
+                
             ax = axes[plot_count]  # Use plot_count for indexing axes
             batch_num = batch_numbers[data_idx] if data_idx < len(batch_numbers) else "Unknown"
             eigenvalues = results_data[data_idx]
-
             sigma_empirical = np.std(eigenvalues)
-            # Use empirical std for R_fit, ensuring it's positive for the formula
-            R_fit = 2 * sigma_empirical if (np.isfinite(sigma_empirical) and sigma_empirical > 1e-9) else 2.0  # Use 1.0 as fallback
             
-            max_eigenvalue = np.max(eigenvalues)
-            matrix_size = layer_shape[0] if layer_shape else 1024  # Use first dimension if available
-
-            # Circular law real-axis marginal density
-            # For non-symmetric matrices, the real parts follow this distribution:
-            # ρ_Re(x) = (2/(π*R^2))*sqrt(R^2 - x^2) for |x| <= R
-            x_circular_fit = np.linspace(-R_fit, R_fit, 300)
-            # Prevent sqrt of negative numbers due to float precision
-            sqrt_term_fit = np.sqrt(np.maximum(0, R_fit**2 - x_circular_fit**2))
-            # Avoid division by zero if R_fit is extremely small
-            rho_circular_fit = (2.0 / (np.pi * max(R_fit**2, 1e-15))) * sqrt_term_fit
-
-            # Add Tracy-Widom distribution for largest eigenvalue
-            # Create Tracy-Widom distribution (beta=1 for real matrices)
-            tw_dist = TracyWidomDistribution(beta=1)
-            
-            # For Ginibre/Circular Law, the edge of the spectrum is at radius R=1
-            # Since we're looking at the real parts, the edge is at 1 (right edge)
-            edge_position = R_fit  # Same as the circular law radius
-            
-            # Get matrix dimensions for fluctuation scaling
+            # Get matrix dimensions for proper scaling
             if layer_shape is not None:
                 m, n = layer_shape
             else:
-                # Default shape if not available
-                m, n = (1024, 1024)
-                
-            # Calculate fluctuation scale for the edge (~N^{-2/3})
-            N = max(m, n)  # Use max dimension for scaling
-            scale_factor = edge_position * N**(-2/3)
+                # Default shape if not available - use square matrix with size from eigenvalues
+                matrix_size = len(eigenvalues) if eigenvalues is not None and len(eigenvalues) > 0 else 1024
+                m = n = matrix_size
             
-            # Create range for displaying Tracy-Widom around the edge
-            # Need enough zoom to show the shape
-            x_tw = np.linspace(edge_position - 5*scale_factor, edge_position + 3*scale_factor, 300)
+            # Determine if we're dealing with a square matrix
+            is_square = (m == n)
+            
+            # Use empirical std for R_fit, ensuring it's positive for the formula
+            R_fit = 2 * sigma_empirical if (np.isfinite(sigma_empirical) and sigma_empirical > 1e-9) else 2.0
+            
+            # STEP 1: Create a regular histogram (NOT density-normalized)
+            num_bins = max(min(len(eigenvalues) // 10, 512), 30)  # Adaptive binning
+            counts, bin_edges, _ = ax.hist(eigenvalues, bins=num_bins, density=False, 
+                                        alpha=0.7, color='royalblue', label='Eigenvalue Histogram',
+                                        range=common_plot_range)
+            
+            # Calculate histogram bin widths for proper scaling
+            bin_width = bin_edges[1] - bin_edges[0]
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            
+            # STEP 2: Plot the circular law (quarter circle for real eigenvalues)
+            # For proper scaling with non-normalized histogram, we need to scale by total count and bin width
+            total_count = len(eigenvalues)
+            
+            # Create x-values for circular law
+            x_circular_fit = np.linspace(-R_fit, R_fit, 300)
+            
+            # Calculate circular law density (unnormalized)
+            # ρ_Re(x) = (2/(π*R^2))*sqrt(R^2 - x^2) for |x| <= R
+            sqrt_term_fit = np.sqrt(np.maximum(0, R_fit**2 - x_circular_fit**2))
+            # Raw density function
+            rho_circular_fit = (2.0 / (np.pi * max(R_fit**2, 1e-15))) * sqrt_term_fit
+            
+            # Scale to match histogram height
+            # For a histogram with N samples and bin width w, the scaling factor is N*w
+            circular_scaling = total_count * bin_width
+            scaled_circular = rho_circular_fit * circular_scaling
+            
+            # Plot the scaled circular law
+            ax.plot(x_circular_fit, scaled_circular, 'r--', linewidth=1.8, 
+                   label=f'Circular Law (R={R_fit:.2f})')
+            
+            # STEP 3: Add Tracy-Widom distribution for largest eigenvalue
+            tw_dist = TracyWidomDistribution(beta=1)
+            
+            # Calculate edge position and scaling based on matrix dimensions
+            if is_square:
+                # For square matrices, use formula from image: λ_{(k)} - 4n
+                edge_position = 1.0  # For normalized eigenvalues
+                scale_factor = 2.0**(4/3) * n**(-1/3)  # Adjusted for normalization
+            else:
+                # For rectangular matrices, use formula: λ_{(k)} - (√m + √n)²
+                sqrt_m = np.sqrt(m)
+                sqrt_n = np.sqrt(n)
+                edge_position = (sqrt_m + sqrt_n)**2
+                scale_factor = (sqrt_m + sqrt_n) * ((m**(-1/2)) + (n**(-1/2)))**(1/3)
+                
+                # Adjust for normalized eigenvalues
+                edge_position = R_fit  # Using radius of circular law
+            
+            print(f"  TW edge: {edge_position:.4f}, scale: {scale_factor:.4e}")
+            
+            # Create range for displaying Tracy-Widom distribution
+            x_tw = np.linspace(edge_position - 4*scale_factor, edge_position + 4*scale_factor, 1000)
             
             # Calculate Tracy-Widom PDF values
             tw_args = (x_tw - edge_position) / scale_factor
-            pdf_tw = tw_dist.pdf(tw_args) / scale_factor
+            pdf_tw = tw_dist.pdf(tw_args) / scale_factor  # Proper normalization
             
-            # Scale height for visibility on the plot
-            # max_pdf = np.max(pdf_tw) if len(pdf_tw) > 0 and np.max(pdf_tw) > 0 else 1.0
-            # target_height = 0.5  # Adjust based on histogram height
-            # pdf_tw = pdf_tw * (target_height / max_pdf)
+            # Scale TW to match histogram height
+            # First find the maximum height near the edge
+            max_pdf_index = np.argmax(pdf_tw)
+            max_pdf_value = pdf_tw[max_pdf_index]
             
-            num_bins = max(min(len(eigenvalues)//10, 1000), 30)  # Adaptive binning
-            ax.hist(eigenvalues, bins=num_bins, density=True, alpha=0.75, label=f'Empirical ρ(λ)', range=common_plot_range)
-            ax.plot(x_circular_fit, rho_circular_fit, 'r--', linewidth=1.5, label=f'Circular Law (R={R_fit:.2f})')
+            # Find histogram height near the edge
+            edge_bin_indices = np.where((bin_centers > edge_position - scale_factor) & 
+                                       (bin_centers < edge_position + scale_factor))[0]
+            hist_height_near_edge = np.max(counts[edge_bin_indices]) if len(edge_bin_indices) > 0 else np.max(counts)
+            
+            # Scale TW curve to approximately match histogram height
+            tw_scaling = hist_height_near_edge / max_pdf_value if max_pdf_value > 0 else 1.0
+            scaled_tw = pdf_tw * tw_scaling
+            
+            # Create a horizontal line at the Tracy-Widom edge
+            # This visually shows where the edge of the spectrum should be
+            ax.axhline(y=0, color='green', linestyle='-', alpha=0.3)
             
             # Plot Tracy-Widom at the edge
-            ax.plot(x_tw, pdf_tw, 'g-', linewidth=1.5, 
-                   label=f'TW (edge={edge_position:.2f}, Δ={scale_factor:.2e})')
+            ax.plot(x_tw, scaled_tw, 'g-', linewidth=2.0,
+                   label=f'TW (edge={edge_position:.2f}, scale={scale_factor:.2e})')
+            
+            # Add the formula from the image as text annotation
+            if is_square:
+                formula_text = r"$A_k(\tau) \approx \frac{\lambda_{(k)}(t_{scaled}) - 4n}{(2^{2/3}n^{1/3})}$"
+            else:
+                formula_text = r"$A_k(\tau) \approx \frac{\lambda_{(k)}(t_{scaled}) - (\sqrt{m}+\sqrt{n})^2}{(\sqrt{m}+\sqrt{n})(m^{-1/2}+n^{-1/2})^{1/3}}$"
+            
+            ax.text(0.5, 0.93, formula_text, transform=ax.transAxes, 
+                  horizontalalignment='center', fontsize=10, 
+                  bbox=dict(facecolor='white', alpha=0.7))
             
             ax.set_xlabel("Normalized Eigenvalue (λ)")
-            ax.set_ylabel("Density ρ(λ)")
+            ax.set_ylabel("Count")
             ax.set_title(f"Batch: {batch_num} (σ={sigma_empirical:.2f})")
             ax.legend(fontsize='small')
             ax.grid(True, alpha=0.5)
             ax.set_xlim(common_plot_range)
             ax.set_ylim(bottom=0)
+            
             plot_count += 1
 
         # Turn off unused axes
@@ -226,7 +282,7 @@ class AnalysisPlotter:
         layer_info_str = f"Layer '{layer_name}', Shape: {layer_shape}"
         title_with_runs = f"Spectral Density Evolution{run_info}\n{matrix_description}\n{layer_info_str}"
         fig.suptitle(title_with_runs, fontsize=14)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.91])  # Adjust rect to prevent title overlap
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust rect to prevent title overlap
         
         # Save plot to file
         plot_filename = f"{self.timestamp}_{layer_name.replace('.', '_')}_spectral_density.png"
@@ -254,6 +310,15 @@ class AnalysisPlotter:
             
         run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
         print(f"Plotting Level Spacing evolution for {layer_name} {matrix_description}{run_info}...")
+        
+        # If layer_shape is None, create a placeholder for display
+        if layer_shape is None:
+            if last_spacings is not None and len(last_spacings) > 0:
+                # Use length of spacings as a rough estimate of matrix size
+                matrix_size = len(last_spacings) + 1  # +1 since spacings are n-1 for n eigenvalues
+                layer_shape = (matrix_size, matrix_size)  # Assume square
+            else:
+                layer_shape = "Unknown"
         
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
@@ -287,7 +352,7 @@ class AnalysisPlotter:
 
                 min_log_s = np.log10(min_s_val)
                 max_log_s = np.log10(max_s_val)
-                num_bins = 50
+                num_bins = 1024
                 # Ensure log bins are valid
                 if max_log_s <= min_log_s: max_log_s = min_log_s + 3  # Ensure range if somehow still equal
                 log_bins = np.logspace(min_log_s, max_log_s, num=num_bins + 1)
@@ -340,32 +405,32 @@ class AnalysisPlotter:
         
     def plot_singular_values(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description, runs=1):
         """
-        Plot singular value distribution
+        Plot singular value evolution
         
         Args:
             layer_name (str): Name of the layer
-            layer_shape (tuple): Shape of the layer
+            layer_shape (tuple): Shape of the layer (m, n)
             results_data (list): List of singular value arrays
             batch_numbers (list): Batch numbers
             matrix_description (str): Description of the matrix type
             runs (int): Number of runs the results are averaged over
         """
-        if not results_data:
-            print(f"No singular value data for {layer_name}. Skipping plot.")
+        if results_data is None or len(results_data) == 0:
+            print(f"No singular values data for {layer_name}. Skipping plot.")
             return
             
         run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
         print(f"Plotting Singular Value distribution for {layer_name} {matrix_description}{run_info}...")
         
-        num_plots_aim = 6
+        num_plots_aim = 4
         num_plots_to_show = min(len(results_data), num_plots_aim)
         if num_plots_to_show <= 0:
             print(f"No singular value data points available for {layer_name}.")
             return
-            
-        ncols = math.ceil(math.sqrt(num_plots_to_show * 1.2))
+        # Create a grid: one axis per snapshot, flattened
+        ncols = 2
         nrows = math.ceil(num_plots_to_show / ncols)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 4.5), squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 5), squeeze=False)
         axes = axes.flatten()
 
         if num_plots_to_show == 1:
@@ -401,113 +466,110 @@ class AnalysisPlotter:
              all_selected_sv = np.concatenate(all_sv_list)
              min_sv = np.min(all_selected_sv)
              max_sv = np.max(all_selected_sv)
-             
-             # For singular values, we typically focus on range from 0 to max
-             # with some padding
-             plot_min = 0  # Singular values are non-negative
-             plot_max = max(max_sv * 1.1, 3.0)  # Add some padding and ensure reasonable minimum range
+             # Pad range
+             plot_min = 0
+             plot_max = max(max_sv * 1.1, 3.0)
              common_plot_range = (plot_min, plot_max)
              print(f"  Determined common plot range: ({common_plot_range[0]:.2f}, {common_plot_range[1]:.2f}) for singular values")
 
+        # Iterate and plot on each axis
         plot_count = 0
-        for i, data_idx in enumerate(valid_indices):  # Iterate through valid indices only
-            ax = axes[plot_count]  # Use plot_count for indexing axes
+        for data_idx in valid_indices:
+            if plot_count >= len(axes):
+                break
+            ax = axes[plot_count]
             batch_num = batch_numbers[data_idx] if data_idx < len(batch_numbers) else "Unknown"
             sv_values = results_data[data_idx]
             
-            # Calculate the aspect ratio to determine the Marchenko-Pastur distribution parameter
+            # Dimensions and MP parameters
             if layer_shape is not None:
                 m, n = layer_shape
-                # In MP theory, ratio = p/n where p=min(m,n) and n=max(m,n)
                 p = min(m, n)
                 n_max = max(m, n)
-                ratio = p/n_max
-                N = n_max  # Use max dimension for TW scaling
+                ratio = p / n_max
+                is_square = (m == n)
             else:
-                # Default ratio if shape is not available
+                # Default values when layer_shape is None
+                # Use square matrix assumption with size based on data length
+                matrix_size = len(sv_values) if sv_values is not None and len(sv_values) > 0 else 1024
+                m = n = matrix_size
+                p = n_max = matrix_size
                 ratio = 1.0
-                N = 1024  # Default size
+                is_square = True
             
-            # Initialize the Marchenko-Pastur distribution for eigenvalues
+            # Avoid numerical issues with ratio = 1.0
+            if ratio >= 0.99:
+                ratio = 0.99  # Slightly adjust ratio to avoid warnings
+            
+            total_count = len(sv_values)
+            
+            # STEP 1: Histogram of normalized singular values (raw counts)
+            num_bins = max(min(total_count // 10, 100), 30)
+            counts, bin_edges, _ = ax.hist(sv_values, bins=num_bins, density=False,
+                                           alpha=0.7, color='royalblue',
+                                           label='Singular Value Histogram',
+                                           range=common_plot_range)
+            bin_width = bin_edges[1] - bin_edges[0]
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            
+            # STEP 2: Scaled MP distribution
             mp_dist = MarchenkoPasturDistribution(beta=1, ratio=ratio, sigma=1.0)
-            
-            # Create x-values for the MP distribution curve - for singular values
             x_sv = np.linspace(common_plot_range[0], common_plot_range[1], 1000)
+            sv_density = np.array([2*s*mp_dist.pdf(s*s) if s>0 else 0 for s in x_sv])
+            scaled_mp = sv_density * total_count * bin_width
+            ax.plot(x_sv, scaled_mp, 'r--', linewidth=1.5,
+                    label=f'MP (λ={ratio:.2f})')
             
-            # Calculate the MP distribution density for eigenvalues
-            # and transform to singular value density using Jacobian: f_σ(σ) = 2σ f_λ(σ²)
-            sv_density = np.zeros_like(x_sv)
-            for j, sigma in enumerate(x_sv):
-                if sigma > 0:  # Avoid division by zero
-                    lambda_val = sigma**2
-                    # Apply Jacobian transformation: f_σ(σ) = 2σ f_λ(σ²)
-                    sv_density[j] = 2 * sigma * mp_dist.pdf(lambda_val)
-                    
-            # Get maximum singular value from data
-            max_singular_value = np.max(sv_values)
-                    
-            # Add Tracy-Widom distribution for largest singular value
+            # STEP 3: Tracy-Widom distribution for largest singular value
             tw_dist = TracyWidomDistribution(beta=1)
+            bulk_edge = 1.0 + np.sqrt(ratio)
+
+            edge_position = 2.0
+            # Ensure we're using defined variables for scale_factor calculation
+            scale_factor = 0.5*(np.sqrt(m) + np.sqrt(n))**(-1/3) 
             
-            # For MP Law, the edge of the spectrum is at (1 + sqrt(ratio))
-            # This is the correct edge position in our normalization
-            edge_position = 1.0 + np.sqrt(ratio)
+            print(f"  TW edge: {edge_position:.4f}, scale: {scale_factor:.4e}")
+            x_tw = np.linspace(edge_position - 4*scale_factor,
+                               edge_position + 4*scale_factor, 300)
+            tw_args = (x_tw - edge_position) / scale_factor
+            pdf_tw = tw_dist.pdf(tw_args) / scale_factor
             
-            # Calculate fluctuation scale for the edge (~N^{-2/3})
-            scale_factor = edge_position * N**(-2/3)
+            # scale TW curve to histogram height
+            max_pdf = np.max(pdf_tw)
+            edge_idx = np.where((bin_centers > edge_position - scale_factor) &
+                                (bin_centers < edge_position + scale_factor))[0]
+            hist_edge = np.max(counts[edge_idx]) if len(edge_idx)>0 else np.max(counts)
+            tw_scale = hist_edge / max_pdf if max_pdf>0 else 1.0
+            ax.plot(x_tw, pdf_tw * tw_scale, 'g-', linewidth=2.0,
+                    label=f'TW (edge={edge_position:.2f}, scale={scale_factor:.2e})')
+
+            # Annotation of TW formula
+            if is_square:
+                formula_text = r"$A_k(\tau) \approx \frac{\sigma_{(k)} - 2\sqrt{n}}{2^{1/3}n^{1/6}}$"
+            else:
+                formula_text = r"$A_k(\tau) \approx \frac{\sigma_{(k)} - (\sqrt{m}+\sqrt{n})}{(\sqrt{m}+\sqrt{n})^{1/2}(m^{-1/2}+n^{-1/2})^{1/3}}$"
+            ax.text(0.5, 0.93, formula_text, transform=ax.transAxes,
+                    horizontalalignment='center', fontsize=10,
+                    bbox=dict(facecolor='white', alpha=0.7))
             
-            # Create range for displaying Tracy-Widom around the edge
-            # Need enough zoom to show the shape - use a narrower window
-            x_tw = np.linspace(edge_position - 5*scale_factor, edge_position + 3*scale_factor, 300)
-            
-            # For singular values, we need to transform TW for eigenvalues
-            # Using the proper Jacobian transformation
-            pdf_tw = np.zeros_like(x_tw)
-            for i, sigma in enumerate(x_tw):
-                # Map to eigenvalue variable
-                s = (sigma - edge_position) / scale_factor
-                
-                # Get TW density at this rescaled position
-                if s > -5 and s < 5:  # Stay within reasonable TW range
-                    pdf_tw[i] = tw_dist.pdf(s) / scale_factor
-            
-            # Scale height for visibility
-            max_pdf = np.max(pdf_tw) if len(pdf_tw) > 0 and np.max(pdf_tw) > 0 else 1.0
-            # Choose a reasonable height for display
-            target_height = 0.3
-            pdf_tw = pdf_tw * (target_height / max_pdf)
-            
-            # Plot histogram of singular values
-            num_bins = max(min(len(sv_values)//10, 75), 30)  # Adaptive binning
-            ax.hist(sv_values, bins=num_bins, density=True, alpha=0.75, 
-                    label='Empirical density', range=common_plot_range)
-            
-            # Plot transformed Marchenko-Pastur law for singular values
-            ax.plot(x_sv, sv_density, 'r--', linewidth=1.5, 
-                    label=f'MP (λ={ratio:.2f}) for singular values')
-                     
-            # Plot Tracy-Widom at the edge for largest singular value
-            ax.plot(x_tw, pdf_tw, 'g-', linewidth=1.5, 
-                   label=f'TW (edge={edge_position:.2f}, Δ={scale_factor:.2e})')
-            
+            # Styling
             ax.set_xlabel("Normalized Singular Value (σ)")
-            ax.set_ylabel("Density")
+            ax.set_ylabel("Count")
             ax.set_title(f"Batch: {batch_num}")
             ax.legend(fontsize='small')
             ax.grid(True, alpha=0.5)
             ax.set_xlim(common_plot_range)
             ax.set_ylim(bottom=0)
             plot_count += 1
-
+            
         # Turn off unused axes
         for j in range(plot_count, len(axes)):
             axes[j].axis('off')
-
+            
+        # Title and save
         layer_info_str = f"Layer '{layer_name}', Shape: {layer_shape}"
         fig.suptitle(f"Singular Value Distribution{run_info}\n{matrix_description}\n{layer_info_str}", fontsize=14)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.91])  # Adjust rect to prevent title overlap
-        
-        # Save plot to file
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plot_filename = f"{self.timestamp}_{layer_name.replace('.', '_')}_singular_values.png"
         plot_path = os.path.join(self.output_dir, plot_filename)
         plt.savefig(plot_path, dpi=self.dpi, bbox_inches='tight')

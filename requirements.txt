@@ -6,3 +6,6 @@ matplotlib>=3.7.0
 h5py>=3.9.0
 tqdm>=4.65.0
 scikit-rmt>=1.0.0 
+tiktoken
+wandb
+seaborn

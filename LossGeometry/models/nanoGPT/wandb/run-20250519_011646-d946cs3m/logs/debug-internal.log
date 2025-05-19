@@ -1,0 +1,15 @@
+{"time":"2025-05-19T01:16:47.054053492Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/workspace/LossGeometry/LossGeometry/models/nanoGPT/wandb/run-20250519_011646-d946cs3m/logs/debug-core.log"}
+{"time":"2025-05-19T01:16:47.317644858Z","level":"INFO","msg":"created new stream","id":"d946cs3m"}
+{"time":"2025-05-19T01:16:47.318759854Z","level":"INFO","msg":"stream: started","id":"d946cs3m"}
+{"time":"2025-05-19T01:16:47.318824226Z","level":"INFO","msg":"handler: started","stream_id":"d946cs3m"}
+{"time":"2025-05-19T01:16:47.318854623Z","level":"INFO","msg":"writer: Do: started","stream_id":"d946cs3m"}
+{"time":"2025-05-19T01:16:47.318857519Z","level":"INFO","msg":"sender: started","stream_id":"d946cs3m"}
+{"time":"2025-05-19T01:16:47.510024697Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-05-19T01:18:37.998068629Z","level":"INFO","msg":"stream: closing","id":"d946cs3m"}
+{"time":"2025-05-19T01:18:37.998153439Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-05-19T01:18:38.008647103Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-05-19T01:18:38.391412534Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-05-19T01:18:38.538561156Z","level":"INFO","msg":"handler: closed","stream_id":"d946cs3m"}
+{"time":"2025-05-19T01:18:38.538654392Z","level":"INFO","msg":"sender: closed","stream_id":"d946cs3m"}
+{"time":"2025-05-19T01:18:38.53863771Z","level":"INFO","msg":"writer: Close: closed","stream_id":"d946cs3m"}
+{"time":"2025-05-19T01:18:38.562387537Z","level":"INFO","msg":"stream: closed","id":"d946cs3m"}

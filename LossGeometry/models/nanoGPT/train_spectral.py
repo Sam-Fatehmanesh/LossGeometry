@@ -27,6 +27,8 @@ from model_spectral import GPTSpectral, GPTConfig
 # Add parent directory to path for spectral_analysis import
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 from LossGeometry.analysis.spectral_analysis import SpectralAnalyzer
+from LossGeometry.utils.io_utils import save_analysis_data
+from datetime import datetime
 
 # -----------------------------------------------------------------------------
 # Default config values - will be overridden by config file
@@ -324,6 +326,11 @@ while True:
                 print(f"Saving spectral analysis data to {spectral_dir}")
                 stats = spectral_analyzer.get_stats()
                 torch.save(stats, os.path.join(spectral_dir, f'spectral_stats_{iter_num}.pt'))
+                
+                # Also save in HDF5 format
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                h5_path = save_analysis_data(spectral_analyzer, raw_model, out_dir, timestamp)
+                print(f"Saved spectral analysis data in HDF5 format to: {h5_path}")
         batch_spectral_triggered = True
 
     if iter_num == 0 and enable_spectral_analysis and master_process:
@@ -387,6 +394,12 @@ if enable_spectral_analysis and master_process:
     print(f"Saving final spectral analysis data to {spectral_dir}")
     stats = spectral_analyzer.get_stats()
     torch.save(stats, os.path.join(spectral_dir, 'spectral_stats_final.pt'))
+    
+    # Also save in HDF5 format like main.py does
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp += "_final"  # Add final marker
+    h5_path = save_analysis_data(spectral_analyzer, raw_model, out_dir, timestamp)
+    print(f"Saved final spectral analysis data in HDF5 format to: {h5_path}")
 
 # Save the final model
 if master_process:

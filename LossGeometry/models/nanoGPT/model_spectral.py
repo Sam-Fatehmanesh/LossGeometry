@@ -21,6 +21,12 @@ class GPTSpectral(nn.Module):
         assert config.block_size is not None
         self.config = config
 
+        # Add these attributes to make compatible with save_analysis_data
+        self.input_size = config.vocab_size
+        self.hidden_size = config.n_embd
+        self.output_size = config.vocab_size
+        self.num_hidden_layers = config.n_layer
+
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),
