@@ -138,38 +138,38 @@ def setup_training_environment():
     """Initialize the training environment - directories, DDP, etc."""
     global device_type, ctx, master_process, ddp_world_size, gradient_accumulation_steps, device, spectral_dir
     
-# Various inits, derived attributes, I/O setup
-ddp = int(os.environ.get('RANK', -1)) != -1  # is this a ddp run?
-if ddp:
-    init_process_group(backend=backend)
-    ddp_rank = int(os.environ['RANK'])
-    ddp_local_rank = int(os.environ['LOCAL_RANK'])
-    ddp_world_size = int(os.environ['WORLD_SIZE'])
-    device = f'cuda:{ddp_local_rank}'
-    torch.cuda.set_device(device)
-    master_process = ddp_rank == 0  # this process will do logging, checkpointing etc.
-    seed_offset = ddp_rank  # each process gets a different seed
-    # world_size number of processes will be training simultaneously, so we can scale
-    # down the desired gradient accumulation iterations per process proportionally
-    assert gradient_accumulation_steps % ddp_world_size == 0
-    gradient_accumulation_steps //= ddp_world_size
-else:
-    # if not ddp, we are running on a single gpu, and one process
-    master_process = True
-    seed_offset = 0
-    ddp_world_size = 1
-tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
-print(f"tokens per iteration will be: {tokens_per_iter:,}")
+    # Various inits, derived attributes, I/O setup
+    ddp = int(os.environ.get('RANK', -1)) != -1  # is this a ddp run?
+    if ddp:
+        init_process_group(backend=backend)
+        ddp_rank = int(os.environ['RANK'])
+        ddp_local_rank = int(os.environ['LOCAL_RANK'])
+        ddp_world_size = int(os.environ['WORLD_SIZE'])
+        device = f'cuda:{ddp_local_rank}'
+        torch.cuda.set_device(device)
+        master_process = ddp_rank == 0  # this process will do logging, checkpointing etc.
+        seed_offset = ddp_rank  # each process gets a different seed
+        # world_size number of processes will be training simultaneously, so we can scale
+        # down the desired gradient accumulation iterations per process proportionally
+        assert gradient_accumulation_steps % ddp_world_size == 0
+        gradient_accumulation_steps //= ddp_world_size
+    else:
+        # if not ddp, we are running on a single gpu, and one process
+        master_process = True
+        seed_offset = 0
+        ddp_world_size = 1
+    tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
+    print(f"tokens per iteration will be: {tokens_per_iter:,}")
 
-if master_process:
-    os.makedirs(out_dir, exist_ok=True)
-    # Also create a directory for spectral analysis results
-    spectral_dir = os.path.join(out_dir, 'spectral')
-    os.makedirs(spectral_dir, exist_ok=True)
-    
-device_type = 'cuda' if 'cuda' in device else 'cpu'  # for later use in torch.autocast
-ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+    if master_process:
+        os.makedirs(out_dir, exist_ok=True)
+        # Also create a directory for spectral analysis results
+        spectral_dir = os.path.join(out_dir, 'spectral')
+        os.makedirs(spectral_dir, exist_ok=True)
+        
+    device_type = 'cuda' if 'cuda' in device else 'cpu'  # for later use in torch.autocast
+    ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+    ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
     # Initialize torch seeds for reproducibility
     torch.manual_seed(1337 + seed_offset)
@@ -190,18 +190,18 @@ def init_new_model():
     # Determine vocab size from meta file or use default
     meta_vocab_size = None
     data_dir = os.path.join('data', dataset)
-meta_path = os.path.join(data_dir, 'meta.pkl')
-if os.path.exists(meta_path):
-    with open(meta_path, 'rb') as f:
-        meta = pickle.load(f)
-    meta_vocab_size = meta['vocab_size']
+    meta_path = os.path.join(data_dir, 'meta.pkl')
+    if os.path.exists(meta_path):
+        with open(meta_path, 'rb') as f:
+            meta = pickle.load(f)
+        meta_vocab_size = meta['vocab_size']
         if master_process:
-    print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
+            print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
-    model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
+        model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
     gptconf = GPTConfig(**model_args)
     model = GPTSpectral(gptconf)
-model.to(device)
+    model.to(device)
 
     # Init optimizer
     optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
@@ -244,19 +244,19 @@ def train_run(run_idx):
     model_args = init_new_model()
     
     # Initialize the spectral analyzer for this run
-if enable_spectral_analysis and master_process:
-    spectral_analyzer = SpectralAnalyzer(
-        analyze_W=True, 
-        analyze_delta_W=True,
-        analyze_spectral_density=True,
-        analyze_level_spacing=False,
-        analyze_singular_values=True
-    )
-    # Get the list of target layers from the model
+    if enable_spectral_analysis and master_process:
+        spectral_analyzer = SpectralAnalyzer(
+            analyze_W=True, 
+            analyze_delta_W=True,
+            analyze_spectral_density=True,
+            analyze_level_spacing=False,
+            analyze_singular_values=True
+        )
+        # Get the list of target layers from the model
         target_layers = raw_model.get_target_layers()
-    spectral_analyzer.initialize_layer_stats(target_layers)
-else:
-    spectral_analyzer = None
+        spectral_analyzer.initialize_layer_stats(target_layers)
+    else:
+        spectral_analyzer = None
 
     # Training stats
     train_losses = []
@@ -265,13 +265,13 @@ else:
     
     # Logging setup
     if wandb_log and master_process and run_idx == 0:  # Only log first run to wandb
-    import wandb
+        import wandb
         wandb.init(project=wandb_project, name=f"{wandb_run_name}-run{run_idx}", config=config)
 
     # Initialize with first batch
     X, Y = get_batch('train')
-t0 = time.time()
-local_iter_num = 0  # number of iterations in the lifetime of this process
+    t0 = time.time()
+    local_iter_num = 0  # number of iterations in the lifetime of this process
     
     # Initial spectral analysis
     if iter_num == 0 and enable_spectral_analysis and master_process:
@@ -281,129 +281,129 @@ local_iter_num = 0  # number of iterations in the lifetime of this process
         print("Completed initial spectral analysis")
     
     # Main training loop
-while True:
-    # determine and set the learning rate for this iteration
-    lr = get_lr(iter_num) if decay_lr else learning_rate
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+    while True:
+        # determine and set the learning rate for this iteration
+        lr = get_lr(iter_num) if decay_lr else learning_rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
 
-    # evaluate the loss on train/val sets and write checkpoints
-    if iter_num % eval_interval == 0 and master_process:
-        losses = estimate_loss()
+        # evaluate the loss on train/val sets and write checkpoints
+        if iter_num % eval_interval == 0 and master_process:
+            losses = estimate_loss()
             print(f"Run {run_idx+1}/{num_runs}, step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
             if wandb_log and run_idx == 0:  # Only log first run to wandb
-            wandb.log({
-                "iter": iter_num,
-                "train/loss": losses['train'],
-                "val/loss": losses['val'],
-                "lr": lr,
-                "mfu": running_mfu*100,  # convert to percentage
-            })
-        if losses['val'] < best_val_loss or always_save_checkpoint:
-            best_val_loss = losses['val']
-            if iter_num > 0:
-                checkpoint = {
-                    'model': raw_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'model_args': model_args,
-                    'iter_num': iter_num,
-                    'best_val_loss': best_val_loss,
-                    'config': config,
-                        'run_idx': run_idx,
-                    }
+                wandb.log({
+                    "iter": iter_num,
+                    "train/loss": losses['train'],
+                    "val/loss": losses['val'],
+                    "lr": lr,
+                    "mfu": running_mfu*100,  # convert to percentage
+                })
+            if losses['val'] < best_val_loss or always_save_checkpoint:
+                best_val_loss = losses['val']
+                if iter_num > 0:
+                    checkpoint = {
+                        'model': raw_model.state_dict(),
+                        'optimizer': optimizer.state_dict(),
+                        'model_args': model_args,
+                        'iter_num': iter_num,
+                        'best_val_loss': best_val_loss,
+                        'config': config,
+                            'run_idx': run_idx,
+                        }
                     run_dir = os.path.join(out_dir, f'run_{run_idx+1}')
                     if not os.path.exists(run_dir):
                         os.makedirs(run_dir)
                     torch.save(checkpoint, os.path.join(run_dir, 'ckpt.pt'))
-    
-    # Perform spectral analysis at specific intervals
-    if enable_spectral_analysis and master_process and iter_num % spectral_analysis_interval == 0:
+        
+        # Perform spectral analysis at specific intervals
+        if enable_spectral_analysis and master_process and iter_num % spectral_analysis_interval == 0:
             print(f"\n--- Performing spectral analysis for run {run_idx+1}/{num_runs} at iteration {iter_num} ---")
-        recorded = spectral_analyzer.analyze_batch(raw_model, optimizer, iter_num)
-        if recorded:
-            # Track the loss value for correlation with spectral properties
-            if len(train_losses) > 0:
-                avg_loss = sum(train_losses) / len(train_losses)
-                spectral_analyzer.track_loss(avg_loss, iter_num)
-                train_losses = []  # Reset for next interval
-            
-            # Save spectral analysis results periodically
-            if iter_num % save_interval == 0:
+            recorded = spectral_analyzer.analyze_batch(raw_model, optimizer, iter_num)
+            if recorded:
+                # Track the loss value for correlation with spectral properties
+                if len(train_losses) > 0:
+                    avg_loss = sum(train_losses) / len(train_losses)
+                    spectral_analyzer.track_loss(avg_loss, iter_num)
+                    train_losses = []  # Reset for next interval
+                
+                # Save spectral analysis results periodically
+                if iter_num % save_interval == 0:
                     run_spectral_dir = os.path.join(spectral_dir, f'run_{run_idx+1}')
                     if not os.path.exists(run_spectral_dir):
                         os.makedirs(run_spectral_dir)
-                stats = spectral_analyzer.get_stats()
+                    stats = spectral_analyzer.get_stats()
                     torch.save(stats, os.path.join(run_spectral_dir, f'spectral_stats_{iter_num}.pt'))
-        batch_spectral_triggered = True
+            batch_spectral_triggered = True
 
-    # Forward backward update, with optional gradient accumulation to simulate larger batch size
-    # and using the GradScaler if data type is float16
-    for micro_step in range(gradient_accumulation_steps):
-        if ddp:
-            model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
-        with ctx:
-            logits, loss = model(X, Y)
-            # Track losses for correlation with spectral properties
-            if enable_spectral_analysis and master_process:
-                train_losses.append(loss.item())
+        # Forward backward update, with optional gradient accumulation to simulate larger batch size
+        # and using the GradScaler if data type is float16
+        for micro_step in range(gradient_accumulation_steps):
+            if ddp:
+                model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+            with ctx:
+                logits, loss = model(X, Y)
+                # Track losses for correlation with spectral properties
+                if enable_spectral_analysis and master_process:
+                    train_losses.append(loss.item())
+            
+            # immediately async prefetch next batch while model is doing the forward pass on the GPU
+            X, Y = get_batch('train')
+            # backward pass, with gradient scaling if training in fp16
+            scaler.scale(loss).backward()
         
-        # immediately async prefetch next batch while model is doing the forward pass on the GPU
-        X, Y = get_batch('train')
-        # backward pass, with gradient scaling if training in fp16
-        scaler.scale(loss).backward()
-    
-    # clip the gradient
-    if grad_clip != 0.0:
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-    
-    # step the optimizer and scaler if training in fp16
-    scaler.step(optimizer)
-    scaler.update()
-    
-    # flush the gradients as soon as we can, no need for this memory anymore
-    optimizer.zero_grad(set_to_none=True)
+        # clip the gradient
+        if grad_clip != 0.0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        
+        # step the optimizer and scaler if training in fp16
+        scaler.step(optimizer)
+        scaler.update()
+        
+        # flush the gradients as soon as we can, no need for this memory anymore
+        optimizer.zero_grad(set_to_none=True)
 
-    # timing and logging
-    t1 = time.time()
-    dt = t1 - t0
-    t0 = t1
-    if iter_num % log_interval == 0 and master_process:
-        # get loss as float, scale up due to the divide above
-        lossf = loss.item()
-        if local_iter_num >= 5:  # let the training loop settle a bit
-            mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
-            running_mfu = mfu if running_mfu == -1.0 else 0.9 * running_mfu + 0.1 * mfu
-            print(f"Run {run_idx+1}/{num_runs}, iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
-    iter_num += 1
-    local_iter_num += 1
-    
-    # Check if we've reached the maximum number of iterations
-    if iter_num >= max_iters:
-        break
+        # timing and logging
+        t1 = time.time()
+        dt = t1 - t0
+        t0 = t1
+        if iter_num % log_interval == 0 and master_process:
+            # get loss as float, scale up due to the divide above
+            lossf = loss.item()
+            if local_iter_num >= 5:  # let the training loop settle a bit
+                mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
+                running_mfu = mfu if running_mfu == -1.0 else 0.9 * running_mfu + 0.1 * mfu
+                print(f"Run {run_idx+1}/{num_runs}, iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+        iter_num += 1
+        local_iter_num += 1
+        
+        # Check if we've reached the maximum number of iterations
+        if iter_num >= max_iters:
+            break
 
-# Save the final spectral analysis results
-if enable_spectral_analysis and master_process:
+    # Save the final spectral analysis results
+    if enable_spectral_analysis and master_process:
         run_spectral_dir = os.path.join(spectral_dir, f'run_{run_idx+1}')
         if not os.path.exists(run_spectral_dir):
             os.makedirs(run_spectral_dir)
-    stats = spectral_analyzer.get_stats()
+        stats = spectral_analyzer.get_stats()
         torch.save(stats, os.path.join(run_spectral_dir, 'spectral_stats_final.pt'))
-    
+        
         # Also save in HDF5 format
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         timestamp += f"_run{run_idx+1}_final"
-    h5_path = save_analysis_data(spectral_analyzer, raw_model, out_dir, timestamp)
+        h5_path = save_analysis_data(spectral_analyzer, raw_model, out_dir, timestamp)
 
-# Save the final model
-if master_process:
-    checkpoint = {
-        'model': raw_model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'model_args': model_args,
-        'iter_num': iter_num,
-        'best_val_loss': best_val_loss,
-        'config': config,
+    # Save the final model
+    if master_process:
+        checkpoint = {
+            'model': raw_model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'model_args': model_args,
+            'iter_num': iter_num,
+            'best_val_loss': best_val_loss,
+            'config': config,
             'run_idx': run_idx,
         }
         run_dir = os.path.join(out_dir, f'run_{run_idx+1}')
@@ -531,8 +531,8 @@ def main():
         aggregate_spectral_results(all_analyzers)
     
     # Clean up
-if ddp:
-    destroy_process_group() 
+    if ddp:
+        destroy_process_group() 
     
     print(f"Completed {num_runs} run(s) successfully!")
 
