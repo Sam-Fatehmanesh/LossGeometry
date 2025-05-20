@@ -48,8 +48,8 @@ python train_spectral.py config/train_pile_spectral.py --num_runs=$NUM_RUNS
 # Step 3: Analyze and visualize spectral results using plot_utils.py's AnalysisPlotter
 echo "=== Step 3: Analyzing and visualizing spectral results using plot_utils.py ==="
 echo "This now uses the AnalysisPlotter class for more consistent visualizations"
-# Note: analyze_spectral_results.py doesn't accept num_runs parameter
-python analyze_spectral_results.py --results_dir $SPECTRAL_DIR --output_dir $FIGURE_DIR
+# Use --top_dir to directly point to the out-spectral directory where HDF5 files are stored
+python analyze_spectral_results.py --top_dir $OUT_DIR --output_dir $FIGURE_DIR
 
 echo "=== Complete! ==="
 echo "Results saved to $OUT_DIR"

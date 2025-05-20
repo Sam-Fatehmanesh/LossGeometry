@@ -106,7 +106,7 @@ def load_analysis_data(h5_path):
         'metadata': {},
         'model': {},
         'batch_numbers': [],
-        'batches': [],
+        'batch': [],  # Use 'batch' to match old stats format
         'loss_values': [],
         'results': {}
     }
@@ -116,6 +116,11 @@ def load_analysis_data(h5_path):
         if 'metadata' in f:
             for key, value in f['metadata'].attrs.items():
                 data['metadata'][key] = value
+            # Copy metadata keys to top level for compatibility
+            if 'matrix_type' in data['metadata']:
+                data['matrix_type'] = data['metadata']['matrix_type']
+            if 'analysis_type' in data['metadata']:
+                data['analysis_type'] = data['metadata']['analysis_type']
             # Default to 1 run if not found
             if 'num_runs' not in data['metadata']:
                 data['metadata']['num_runs'] = 1
@@ -127,18 +132,34 @@ def load_analysis_data(h5_path):
         
         # Load batch and loss data
         if 'batch_numbers' in f:
-            data['batch_numbers'] = f['batch_numbers'][()]
+            data['batch_numbers'] = f['batch_numbers'][()].tolist()
         if 'batches' in f:
-            data['batches'] = f['batches'][()]
+            data['batch'] = f['batches'][()].tolist()
         if 'loss_values' in f:
-            data['loss_values'] = f['loss_values'][()]
+            data['loss_values'] = f['loss_values'][()].tolist()
         
         # Load layer results
         if 'layers' in f:
             for layer_name in f['layers']:
                 layer_group = f['layers'][layer_name]
+                
+                # Safely parse shape without eval
+                shape = None
+                if 'shape' in layer_group.attrs:
+                    shape_str = layer_group.attrs['shape']
+                    # Try to parse a tuple like "(512, 512)" safely
+                    if shape_str.startswith('(') and shape_str.endswith(')'):
+                        try:
+                            # Remove parentheses and split by comma
+                            dims = shape_str.strip('()').split(',')
+                            # Convert each dimension to int
+                            shape = tuple(int(dim.strip()) for dim in dims if dim.strip())
+                        except (ValueError, SyntaxError):
+                            # If parsing fails, store as string
+                            shape = shape_str
+                
                 data['results'][layer_name] = {
-                    'shape': eval(layer_group.attrs['shape']) if 'shape' in layer_group.attrs else None
+                    'shape': shape
                 }
                 
                 # Load eigenvalues
@@ -148,7 +169,7 @@ def load_analysis_data(h5_path):
                     for i in range(len(eigen_group)):
                         batch_key = f'batch_{i}'
                         if batch_key in eigen_group:
-                            eigenvalues_list.append(eigen_group[batch_key][()])
+                            eigenvalues_list.append(eigen_group[batch_key][()].tolist())
                     data['results'][layer_name]['eigenvalues_list'] = eigenvalues_list
                     if eigenvalues_list:
                         data['results'][layer_name]['last_eigenvalues'] = eigenvalues_list[-1]
@@ -157,9 +178,9 @@ def load_analysis_data(h5_path):
                 if 'spacing' in layer_group:
                     spacing_group = layer_group['spacing']
                     if 'std_dev_list' in spacing_group:
-                        data['results'][layer_name]['std_dev_norm_spacing_list'] = spacing_group['std_dev_list'][()]
+                        data['results'][layer_name]['std_dev_norm_spacing_list'] = spacing_group['std_dev_list'][()].tolist()
                     if 'last_spacings' in spacing_group:
-                        data['results'][layer_name]['last_normalized_spacings'] = spacing_group['last_spacings'][()]
+                        data['results'][layer_name]['last_normalized_spacings'] = spacing_group['last_spacings'][()].tolist()
                 
                 # Load singular values
                 if 'singular_values' in layer_group:
@@ -168,7 +189,7 @@ def load_analysis_data(h5_path):
                     for i in range(len(sv_group)):
                         batch_key = f'batch_{i}'
                         if batch_key in sv_group:
-                            sv_list.append(sv_group[batch_key][()])
+                            sv_list.append(sv_group[batch_key][()].tolist())
                     data['results'][layer_name]['singular_values_list'] = sv_list
                     if sv_list:
                         data['results'][layer_name]['last_singular_values'] = sv_list[-1]

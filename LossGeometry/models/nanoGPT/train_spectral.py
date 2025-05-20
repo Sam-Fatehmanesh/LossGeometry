@@ -301,20 +301,8 @@ def train_run(run_idx):
                 })
             if losses['val'] < best_val_loss or always_save_checkpoint:
                 best_val_loss = losses['val']
-                if iter_num > 0:
-                    checkpoint = {
-                        'model': raw_model.state_dict(),
-                        'optimizer': optimizer.state_dict(),
-                        'model_args': model_args,
-                        'iter_num': iter_num,
-                        'best_val_loss': best_val_loss,
-                        'config': config,
-                            'run_idx': run_idx,
-                        }
-                    run_dir = os.path.join(out_dir, f'run_{run_idx+1}')
-                    if not os.path.exists(run_dir):
-                        os.makedirs(run_dir)
-                    torch.save(checkpoint, os.path.join(run_dir, 'ckpt.pt'))
+                # Only save the final checkpoint to save disk space, not intermediate ones
+                # (Code to save intermediate checkpoints is removed)
         
         # Perform spectral analysis at specific intervals
         if enable_spectral_analysis and master_process and iter_num % spectral_analysis_interval == 0:
@@ -327,13 +315,7 @@ def train_run(run_idx):
                     spectral_analyzer.track_loss(avg_loss, iter_num)
                     train_losses = []  # Reset for next interval
                 
-                # Save spectral analysis results periodically
-                if iter_num % save_interval == 0:
-                    run_spectral_dir = os.path.join(spectral_dir, f'run_{run_idx+1}')
-                    if not os.path.exists(run_spectral_dir):
-                        os.makedirs(run_spectral_dir)
-                    stats = spectral_analyzer.get_stats()
-                    torch.save(stats, os.path.join(run_spectral_dir, f'spectral_stats_{iter_num}.pt'))
+                # Skip saving intermediate spectral analysis results to save disk space
             batch_spectral_triggered = True
 
         # Forward backward update, with optional gradient accumulation to simulate larger batch size
@@ -387,29 +369,31 @@ def train_run(run_idx):
         run_spectral_dir = os.path.join(spectral_dir, f'run_{run_idx+1}')
         if not os.path.exists(run_spectral_dir):
             os.makedirs(run_spectral_dir)
-        stats = spectral_analyzer.get_stats()
-        torch.save(stats, os.path.join(run_spectral_dir, 'spectral_stats_final.pt'))
         
-        # Also save in HDF5 format
+        # Skip saving the PT file to save disk space
+        # stats = spectral_analyzer.get_stats()
+        # torch.save(stats, os.path.join(run_spectral_dir, 'spectral_stats_final.pt'))
+        
+        # Save only in HDF5 format
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         timestamp += f"_run{run_idx+1}_final"
         h5_path = save_analysis_data(spectral_analyzer, raw_model, out_dir, timestamp)
 
-    # Save the final model
-    if master_process:
-        checkpoint = {
-            'model': raw_model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'model_args': model_args,
-            'iter_num': iter_num,
-            'best_val_loss': best_val_loss,
-            'config': config,
-            'run_idx': run_idx,
-        }
-        run_dir = os.path.join(out_dir, f'run_{run_idx+1}')
-        if not os.path.exists(run_dir):
-            os.makedirs(run_dir)
-        torch.save(checkpoint, os.path.join(run_dir, 'ckpt_final.pt'))
+    # # Save the final model
+    # if master_process:
+    #     checkpoint = {
+    #         'model': raw_model.state_dict(),
+    #         'optimizer': optimizer.state_dict(),
+    #         'model_args': model_args,
+    #         'iter_num': iter_num,
+    #         'best_val_loss': best_val_loss,
+    #         'config': config,
+    #         'run_idx': run_idx,
+    #     }
+    #     run_dir = os.path.join(out_dir, f'run_{run_idx+1}')
+    #     if not os.path.exists(run_dir):
+    #         os.makedirs(run_dir)
+    #     torch.save(checkpoint, os.path.join(run_dir, 'ckpt_final.pt'))
     
     return spectral_analyzer
 
@@ -497,10 +481,11 @@ def aggregate_spectral_results(analyzers):
         if not os.path.exists(aggregated_dir):
             os.makedirs(aggregated_dir)
         
-        stats = aggregated_analyzer.get_stats()
-        torch.save(stats, os.path.join(aggregated_dir, 'spectral_stats_aggregated.pt'))
+        # Skip saving the PT file to save disk space
+        # stats = aggregated_analyzer.get_stats()
+        # torch.save(stats, os.path.join(aggregated_dir, 'spectral_stats_aggregated.pt'))
         
-        # Save in HDF5 format
+        # Save in HDF5 format only
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         timestamp += f"_aggregated_{num_runs}_runs"
         h5_path = save_analysis_data(aggregated_analyzer, raw_model, out_dir, timestamp)

@@ -6,7 +6,8 @@ distributions for the weight matrices of the nanoGPT model.
 
 Examples:
     $ python analyze_spectral_results.py --results_dir out-spectral/spectral --output_dir figures
-    $ python analyze_spectral_results.py --h5_file out-spectral/20240515_123456/20240515_123456_analysis_data.h5 --output_dir figures
+    $ python analyze_spectral_results.py --h5_file out-spectral/20YYMMDD_HHMMSS/20YYMMDD_HHMMSS_analysis_data.h5 --output_dir figures
+    $ python analyze_spectral_results.py --top_dir out-spectral --output_dir figures
 """
 
 import os
@@ -44,29 +45,39 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NumpyEncoder, self).default(obj)
 
-def find_latest_results(results_dir):
-    """Find the latest spectral analysis results file"""
-    # First check for PT files
-    result_files = [f for f in os.listdir(results_dir) if f.startswith('spectral_stats_') and f.endswith('.pt')]
-    if len(result_files) > 0:
-        # If we have a final file, use that
-        if 'spectral_stats_final.pt' in result_files:
-            return os.path.join(results_dir, 'spectral_stats_final.pt'), 'pt'
-        
-        # Otherwise sort by iteration number and take the latest
-        iter_nums = [int(f.split('_')[-1].split('.')[0]) for f in result_files if f != 'spectral_stats_final.pt']
-        if iter_nums:
-            latest_iter = max(iter_nums)
-            return os.path.join(results_dir, f'spectral_stats_{latest_iter}.pt'), 'pt'
+def find_latest_results(results_dir, top_dir=None):
+    """Find the latest spectral analysis results file
     
-    # Then check for HDF5 files
-    h5_pattern = os.path.join(results_dir, "**", "*_analysis_data.h5")
+    Args:
+        results_dir: Directory containing spectral analysis results
+        top_dir: Optional top-level directory to search for HDF5 files
+    """
+    # First check for HDF5 files (prioritize HDF5 since we're no longer generating PT files)
+    search_dir = top_dir if top_dir else os.path.dirname(results_dir)
+    h5_pattern = os.path.join(search_dir, "**", "*_analysis_data.h5")
     h5_files = glob.glob(h5_pattern, recursive=True)
     
     if h5_files:
         # Sort by modification time (newest first)
         h5_files.sort(key=os.path.getmtime, reverse=True)
         return h5_files[0], 'h5'
+    
+    # Then check for PT files as fallback
+    try:
+        result_files = [f for f in os.listdir(results_dir) if f.startswith('spectral_stats_') and f.endswith('.pt')]
+        if len(result_files) > 0:
+            # If we have a final file, use that
+            if 'spectral_stats_final.pt' in result_files:
+                return os.path.join(results_dir, 'spectral_stats_final.pt'), 'pt'
+            
+            # Otherwise sort by iteration number and take the latest
+            iter_nums = [int(f.split('_')[-1].split('.')[0]) for f in result_files if f != 'spectral_stats_final.pt']
+            if iter_nums:
+                latest_iter = max(iter_nums)
+                return os.path.join(results_dir, f'spectral_stats_{latest_iter}.pt'), 'pt'
+    except (FileNotFoundError, NotADirectoryError):
+        # Directory might not exist if we've switched to only using HDF5 files
+        pass
     
     return None, None
 
@@ -544,9 +555,13 @@ def main(args):
         data = load_analysis_data(args.h5_file)
     else:
         # Find the latest results file
-        latest_file, file_type = find_latest_results(args.results_dir)
+        latest_file, file_type = find_latest_results(args.results_dir, args.top_dir)
         if latest_file is None:
             print(f"No results found in directory: {args.results_dir}")
+            print("Tip: The script now looks for HDF5 files in the parent directory of the provided --results_dir")
+            print("Options:")
+            print("  1. Use --h5_file with the direct path to an HDF5 file, e.g., --h5_file out-spectral/20YYMMDD_HHMMSS/20YYMMDD_HHMMSS_analysis_data.h5")
+            print("  2. Use --top_dir to specify the top-level directory to search for HDF5 files, e.g., --top_dir out-spectral")
             return
         
         print(f"Loading data from file: {latest_file} (type: {file_type})")
@@ -657,6 +672,8 @@ if __name__ == "__main__":
                         help='Directory containing spectral analysis results')
     parser.add_argument('--h5_file', type=str, default=None,
                         help='Direct path to HDF5 file with spectral analysis results')
+    parser.add_argument('--top_dir', type=str, default=None,
+                        help='Top-level directory to search for HDF5 files (e.g., out-spectral)')
     parser.add_argument('--output_dir', type=str, default='figures',
                         help='Directory to save plots and analysis results')
     parser.add_argument('--selected_layers', type=str, nargs='+', default=None,
