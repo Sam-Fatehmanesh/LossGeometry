@@ -6,6 +6,7 @@
 *.tiff
 *.ico
 *.gz
+*.zip
 data/
 
 __pycache__/
