@@ -200,7 +200,8 @@ def train_and_analyze(args):
         model.to(device)
         
         # Setup optimizer and loss
-        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        #optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
         criterion = nn.CrossEntropyLoss()
         
         # Load dataset
@@ -438,7 +439,8 @@ def train_and_analyze(args):
                 layer_results['singular_values_list'], 
                 aggregated_analyzer.stats['batch'], 
                 aggregated_analyzer.matrix_description,
-                runs=args.num_runs
+                runs=args.num_runs,
+                num_epochs=args.num_epochs
             )
     
     print("\nAnalysis complete. Results saved to:", output_dir)
