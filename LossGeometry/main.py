@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from LossGeometry.models.mlp import SimpleMLP
 from LossGeometry.datasets.mnist_dataset import load_mnist
+from LossGeometry.datasets.cifar100_dataset import load_cifar100
 from LossGeometry.analysis.spectral_analysis import SpectralAnalyzer
 from LossGeometry.visualization.plot_utils import AnalysisPlotter
 from LossGeometry.utils.io_utils import save_analysis_data, get_experiment_dir
@@ -60,6 +61,9 @@ def parse_args():
     parser.add_argument('--vit_mlp_ratio', type=float, default=2.0, help='Ratio of MLP hidden dim to embed_dim in ViT')
     parser.add_argument('--vit_input_channels', type=int, default=1, help='Number of input channels for ViT')
     parser.add_argument('--vit_init_fc', action='store_true', help='Gaussian init for ViT classification head')
+    # Dataset selection
+    parser.add_argument('--dataset', type=str, choices=['mnist','cifar100'], default='mnist',
+                        help='Which dataset to use for training')
     
     args = parser.parse_args()
     
@@ -199,8 +203,13 @@ def train_and_analyze(args):
         optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
         criterion = nn.CrossEntropyLoss()
         
-        # Load MNIST dataset
-        train_loader = load_mnist(batch_size=args.batch_size)
+        # Load dataset
+        if args.dataset == 'mnist':
+            train_loader = load_mnist(batch_size=args.batch_size)
+        elif args.dataset == 'cifar100':
+            train_loader = load_cifar100(batch_size=args.batch_size)
+        else:
+            raise ValueError(f"Unknown dataset: {args.dataset}")
         
         # Initialize spectral analyzer for this run
         analyzer = SpectralAnalyzer(

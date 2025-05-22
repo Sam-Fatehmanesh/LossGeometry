@@ -52,6 +52,9 @@ def main():
     parser.add_argument('--vit_mlp_ratio', type=float, default=2.0, help='Ratio of MLP hidden dim to embed_dim in ViT')
     parser.add_argument('--vit_input_channels', type=int, default=1, help='Number of input channels for ViT')
     parser.add_argument('--vit_init_fc', action='store_true', help='Apply Gaussian init to ViT classification head')
+    # Dataset selection
+    parser.add_argument('--dataset', type=str, choices=['mnist','cifar100'], default='mnist',
+                        help='Which dataset to use for training')
     
     args = parser.parse_args()
     
