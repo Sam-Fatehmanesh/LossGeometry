@@ -56,6 +56,11 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
         f.create_dataset('batches', data=np.array(stats['batch']))
         f.create_dataset('loss_values', data=np.array(stats['loss_values']))
         
+        # Save gradient magnitude data if available
+        if 'gradient_magnitudes' in stats and len(stats['gradient_magnitudes']) > 0:
+            f.create_dataset('gradient_magnitudes', data=np.array(stats['gradient_magnitudes']))
+            f.create_dataset('gradient_batch_numbers', data=np.array(stats['gradient_batch_numbers']))
+        
         # Save layer results
         layers_group = f.create_group('layers')
         for layer_name, layer_data in stats['results'].items():
@@ -108,6 +113,8 @@ def load_analysis_data(h5_path):
         'batch_numbers': [],
         'batches': [],
         'loss_values': [],
+        'gradient_magnitudes': [],
+        'gradient_batch_numbers': [],
         'results': {}
     }
     
@@ -132,6 +139,12 @@ def load_analysis_data(h5_path):
             data['batches'] = f['batches'][()]
         if 'loss_values' in f:
             data['loss_values'] = f['loss_values'][()]
+        
+        # Load gradient magnitude data if available
+        if 'gradient_magnitudes' in f:
+            data['gradient_magnitudes'] = f['gradient_magnitudes'][()]
+        if 'gradient_batch_numbers' in f:
+            data['gradient_batch_numbers'] = f['gradient_batch_numbers'][()]
         
         # Load layer results
         if 'layers' in f:

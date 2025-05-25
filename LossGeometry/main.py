@@ -225,7 +225,8 @@ def train_and_analyze(args):
             analyze_delta_W=args.analyze_delta_W,
             analyze_spectral_density=args.analyze_spectral_density,
             analyze_level_spacing=args.analyze_level_spacing,
-            analyze_singular_values=args.analyze_singular_values
+            analyze_singular_values=args.analyze_singular_values,
+            track_gradient_magnitude=True
         )
         analyzer.initialize_layer_stats(target_layers)
         analyzers.append(analyzer)
@@ -278,6 +279,8 @@ def train_and_analyze(args):
                 if current_batch % args.log_every_n_batches == 0:
                     batch_loop.set_postfix({"analyzing": True, "loss": loss.item()})
                     analyzer.analyze_batch(model, optimizer, current_batch)
+                    # Track gradient magnitude at the same frequency as other analyses
+                    analyzer.track_gradient_magnitude(model, current_batch)
                 else:
                     batch_loop.set_postfix({"loss": loss.item()})
                 
@@ -334,7 +337,8 @@ def train_and_analyze(args):
         analyze_delta_W=args.analyze_delta_W,
         analyze_spectral_density=args.analyze_spectral_density,
         analyze_level_spacing=args.analyze_level_spacing,
-        analyze_singular_values=args.analyze_singular_values
+        analyze_singular_values=args.analyze_singular_values,
+        track_gradient_magnitude=True
     )
     aggregated_analyzer.initialize_layer_stats(target_layers)
     
@@ -348,6 +352,17 @@ def train_and_analyze(args):
         # Average losses across runs
         avg_losses = np.mean([run_losses for run_losses in all_runs_data['loss_values']], axis=0)
         aggregated_analyzer.stats['loss_values'] = avg_losses.tolist()
+        
+        # Average gradient magnitudes across runs
+        all_gradient_magnitudes = [analyzer.stats['gradient_magnitudes'] for analyzer in analyzers]
+        all_gradient_batch_numbers = [analyzer.stats['gradient_batch_numbers'] for analyzer in analyzers]
+        
+        if all_gradient_magnitudes and len(all_gradient_magnitudes[0]) > 0:
+            # Use the first run's batch numbers (should be the same for all runs)
+            aggregated_analyzer.stats['gradient_batch_numbers'] = all_gradient_batch_numbers[0]
+            # Average gradient magnitudes across runs
+            avg_gradient_magnitudes = np.mean(all_gradient_magnitudes, axis=0)
+            aggregated_analyzer.stats['gradient_magnitudes'] = avg_gradient_magnitudes.tolist()
         
         # Process eigenvalues and singular values
         for layer_name in target_layers:
@@ -409,6 +424,21 @@ def train_and_analyze(args):
     else:
         plotter.plot_loss(aggregated_analyzer.stats['batch_numbers'], 
                           aggregated_analyzer.stats['loss_values'])
+    
+    # Plot gradient magnitude
+    if 'gradient_magnitudes' in aggregated_analyzer.stats and len(aggregated_analyzer.stats['gradient_magnitudes']) > 0:
+        if args.num_runs > 1:
+            plotter.plot_gradient_magnitude(
+                aggregated_analyzer.stats['gradient_batch_numbers'], 
+                aggregated_analyzer.stats['gradient_magnitudes'],
+                plot_title=f"Gradient Magnitude Evolution (Averaged over {args.num_runs} runs)",
+                runs=args.num_runs
+            )
+        else:
+            plotter.plot_gradient_magnitude(
+                aggregated_analyzer.stats['gradient_batch_numbers'], 
+                aggregated_analyzer.stats['gradient_magnitudes']
+            )
     
     # Plot analysis results for each layer
     for layer_name in target_layers:

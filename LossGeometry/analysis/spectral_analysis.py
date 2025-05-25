@@ -7,7 +7,7 @@ class SpectralAnalyzer:
     Computes eigenvalues and singular values of weight matrices
     """
     def __init__(self, analyze_W=True, analyze_delta_W=False, analyze_spectral_density=True, 
-                 analyze_level_spacing=False, analyze_singular_values=True):
+                 analyze_level_spacing=False, analyze_singular_values=True, track_gradient_magnitude=True):
         """
         Initialize the spectral analyzer
         
@@ -17,6 +17,7 @@ class SpectralAnalyzer:
             analyze_spectral_density (bool): Whether to analyze spectral density
             analyze_level_spacing (bool): Whether to analyze level spacing
             analyze_singular_values (bool): Whether to analyze singular values
+            track_gradient_magnitude (bool): Whether to track gradient magnitudes
         """
         # Sanity checks
         if not analyze_W and not analyze_delta_W:
@@ -31,6 +32,7 @@ class SpectralAnalyzer:
         self.analyze_spectral_density = analyze_spectral_density
         self.analyze_level_spacing = analyze_level_spacing
         self.analyze_singular_values = analyze_singular_values
+        self.track_gradient_mag = track_gradient_magnitude
         
         # Figure out GPU vs CPU once
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -53,6 +55,8 @@ class SpectralAnalyzer:
             'analysis_type': 'Density' if self.analyze_spectral_density else 'Spacing',
             'loss_values': [],
             'batch_numbers': [],
+            'gradient_magnitudes': [],
+            'gradient_batch_numbers': [],
             'results': {}
         }
     
@@ -284,6 +288,35 @@ class SpectralAnalyzer:
         """Track loss values for plotting"""
         self.stats['loss_values'].append(loss_value)
         self.stats['batch_numbers'].append(batch_number)
+    
+    def track_gradient_magnitude(self, model, batch_number):
+        """
+        Track the overall gradient magnitude across all model parameters
+        
+        Args:
+            model (nn.Module): The model to analyze gradients for
+            batch_number (int): Current batch number
+        """
+        if not self.track_gradient_mag:
+            return
+            
+        total_grad_norm = 0.0
+        param_count = 0
+        
+        with torch.no_grad():
+            for param in model.parameters():
+                if param.grad is not None:
+                    # Compute L2 norm of gradients for this parameter
+                    param_grad_norm = torch.norm(param.grad).item()
+                    total_grad_norm += param_grad_norm ** 2
+                    param_count += 1
+            
+            if param_count > 0:
+                # Take square root to get the overall L2 norm
+                total_grad_norm = total_grad_norm ** 0.5
+                self.stats['gradient_magnitudes'].append(total_grad_norm)
+                self.stats['gradient_batch_numbers'].append(batch_number)
+                print(f"  Gradient magnitude at batch {batch_number}: {total_grad_norm:.6f}")
         
     def get_stats(self):
         """Get the current analysis stats"""

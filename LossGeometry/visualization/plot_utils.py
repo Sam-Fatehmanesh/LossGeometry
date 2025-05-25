@@ -73,6 +73,76 @@ class AnalysisPlotter:
         print(f"Saved loss plot to: {plot_path}")
         plt.close()
     
+    def plot_gradient_magnitude(self, batch_numbers, gradient_magnitudes, plot_title=None, runs=1):
+        """
+        Plot gradient magnitude over batches
+        
+        Args:
+            batch_numbers (list or array): Batch numbers
+            gradient_magnitudes (list or array): Gradient magnitude values
+            plot_title (str): Optional custom title for the plot
+            runs (int): Number of runs the results are averaged over
+        """
+        # Check if gradient_magnitudes exists and has elements
+        if gradient_magnitudes is None or len(gradient_magnitudes) == 0:
+            print("No gradient magnitude values to plot.")
+            return
+        
+        run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
+        print(f"\nPlotting gradient magnitude per batch{run_info}...")
+        
+        plt.figure(figsize=(12, 8))
+        
+        # Create subplot for linear scale
+        plt.subplot(2, 1, 1)
+        plt.plot(batch_numbers, gradient_magnitudes, 'g-', linewidth=1.5, alpha=0.8)
+        plt.xlabel('Batch Number')
+        plt.ylabel('Gradient Magnitude (L2 Norm)')
+        plt.title(plot_title if plot_title else f'Gradient Magnitude Evolution{run_info}')
+        plt.grid(True, alpha=0.3)
+        
+        # Add moving average to smooth the curve
+        if len(gradient_magnitudes) > 10:
+            window_size = min(20, len(gradient_magnitudes) // 5)
+            moving_avg = np.convolve(
+                gradient_magnitudes, 
+                np.ones(window_size)/window_size, 
+                mode='valid'
+            )
+            # Plot moving average starting at the window_size-1 point
+            plt.plot(
+                batch_numbers[window_size-1:window_size-1+len(moving_avg)], 
+                moving_avg, 'r-', linewidth=2, alpha=0.9, 
+                label=f'Moving Avg (window={window_size})'
+            )
+            plt.legend()
+        
+        # Create subplot for log scale
+        plt.subplot(2, 1, 2)
+        plt.semilogy(batch_numbers, gradient_magnitudes, 'g-', linewidth=1.5, alpha=0.8)
+        plt.xlabel('Batch Number')
+        plt.ylabel('Gradient Magnitude (L2 Norm) [Log Scale]')
+        plt.title(f'Gradient Magnitude Evolution - Log Scale{run_info}')
+        plt.grid(True, alpha=0.3)
+        
+        # Add moving average to log plot as well
+        if len(gradient_magnitudes) > 10:
+            plt.semilogy(
+                batch_numbers[window_size-1:window_size-1+len(moving_avg)], 
+                moving_avg, 'r-', linewidth=2, alpha=0.9, 
+                label=f'Moving Avg (window={window_size})'
+            )
+            plt.legend()
+        
+        plt.tight_layout()
+        
+        # Save gradient magnitude plot
+        plot_filename = f"{self.timestamp}_gradient_magnitude.png"
+        plot_path = os.path.join(self.output_dir, plot_filename)
+        plt.savefig(plot_path, dpi=self.dpi, bbox_inches='tight')
+        print(f"Saved gradient magnitude plot to: {plot_path}")
+        plt.close()
+    
     def plot_spectral_density(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description, runs=1):
         """
         Plot spectral density evolution
