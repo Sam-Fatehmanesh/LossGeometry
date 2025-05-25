@@ -1,4 +1,4 @@
-# Config for training nanoGPT on the Shakespeare dataset with spectral analysis
+# Config for training nanoGPT on the Shakespeare dataset with spectral analysis using SGD without momentum
 # Run as: python train_spectral.py config/train_pile_spectral.py
 
 wandb_log = True
@@ -21,13 +21,16 @@ block_size = 256
 gradient_accumulation_steps = 1
 
 # Shorter training run for spectral analysis
-max_iters = 2000
-lr_decay_iters = 2000
+max_iters = 20000
+lr_decay_iters = 20000
 warmup_iters = 200
 
 # Learning rate
 learning_rate = 5e-4
 min_lr = 5e-5
+
+# Optimizer configuration
+optimizer = 'sgd_no_momentum'  # Use SGD without momentum
 
 # Evaluation and logging
 eval_interval = 100

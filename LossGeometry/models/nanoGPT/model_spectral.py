@@ -151,7 +151,7 @@ class GPTSpectral(nn.Module):
         mfu = flops_achieved / flops_promised
         return mfu
         
-    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
+    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type, optimizer_type='adamw'):
         # start with all of the candidate parameters
         param_dict = {pn: p for pn, p in self.named_parameters()}
         # filter out those that do not require grad
@@ -164,11 +164,24 @@ class GPTSpectral(nn.Module):
             {'params': decay_params, 'weight_decay': weight_decay},
             {'params': nodecay_params, 'weight_decay': 0.0}
         ]
-        # Create AdamW optimizer and use the fused version if it is available
-        use_fused = (device_type == 'cuda') and ('fused' in inspect.signature(torch.optim.AdamW).parameters)
-        print(f"using fused AdamW: {use_fused}")
-        extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
+        
+        optimizer_type_lower = optimizer_type.lower()
+        
+        if optimizer_type_lower == 'sgd':
+            # Use SGD optimizer with momentum
+            print(f"using SGD optimizer with momentum={betas[0]}")
+            optimizer = torch.optim.SGD(optim_groups, lr=learning_rate, momentum=betas[0])
+        elif optimizer_type_lower == 'sgd_no_momentum':
+            # Use SGD optimizer without momentum
+            print(f"using SGD optimizer without momentum")
+            optimizer = torch.optim.SGD(optim_groups, lr=learning_rate, momentum=0.0)
+        else:
+            # Use AdamW optimizer (default)
+            use_fused = (device_type == 'cuda') and ('fused' in inspect.signature(torch.optim.AdamW).parameters)
+            print(f"using fused AdamW: {use_fused}")
+            extra_args = dict(fused=True) if use_fused else dict()
+            optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
+        
         return optimizer
         
     @classmethod

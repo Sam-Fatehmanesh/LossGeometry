@@ -63,6 +63,7 @@ weight_decay = 0.1
 beta1 = 0.9
 beta2 = 0.95
 grad_clip = 1.0
+optimizer = 'adamw'  # default optimizer
 # learning rate decay settings
 decay_lr = True
 warmup_iters = 1000
@@ -181,7 +182,7 @@ def setup_training_environment():
 def init_new_model():
     """Initialize a fresh model instance"""
     # Create model with global configuration
-    global model, optimizer, scaler, raw_model
+    global model, optimizer_instance, scaler, raw_model
     
     # determine the vocab size we'll use for from-scratch training
     model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
@@ -204,7 +205,7 @@ def init_new_model():
     model.to(device)
 
     # Init optimizer
-    optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
+    optimizer_instance = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type, optimizer)
     
     # GradScaler for mixed precision
     scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
@@ -228,7 +229,13 @@ def init_new_model():
             print(f"number of parameters: {sum(p.numel() for p in model.parameters())/1e6:.2f}M")
         print(f"Using device: {device}")
         if device_type == 'cuda':
-            print(f"using fused AdamW: {hasattr(torch.optim, 'fused') and isinstance(optimizer, torch.optim.AdamW)}")
+            optimizer_lower = optimizer.lower()
+            if optimizer_lower == 'sgd':
+                print(f"using SGD optimizer with momentum: {isinstance(optimizer_instance, torch.optim.SGD)}")
+            elif optimizer_lower == 'sgd_no_momentum':
+                print(f"using SGD optimizer without momentum: {isinstance(optimizer_instance, torch.optim.SGD)}")
+            else:
+                print(f"using fused AdamW: {hasattr(torch.optim, 'fused') and isinstance(optimizer_instance, torch.optim.AdamW)}")
     
     return model_args
 
@@ -277,14 +284,14 @@ def train_run(run_idx):
     if iter_num == 0 and enable_spectral_analysis and master_process:
         # Analyze initial weights
         print(f"\n--- Performing initial spectral analysis for run {run_idx+1} ---")
-        spectral_analyzer.analyze_batch(raw_model, optimizer, 0)
+        spectral_analyzer.analyze_batch(raw_model, optimizer_instance, 0)
         print("Completed initial spectral analysis")
     
     # Main training loop
     while True:
         # determine and set the learning rate for this iteration
         lr = get_lr(iter_num) if decay_lr else learning_rate
-        for param_group in optimizer.param_groups:
+        for param_group in optimizer_instance.param_groups:
             param_group['lr'] = lr
 
         # evaluate the loss on train/val sets and write checkpoints
@@ -307,7 +314,7 @@ def train_run(run_idx):
         # Perform spectral analysis at specific intervals
         if enable_spectral_analysis and master_process and iter_num % spectral_analysis_interval == 0:
             print(f"\n--- Performing spectral analysis for run {run_idx+1}/{num_runs} at iteration {iter_num} ---")
-            recorded = spectral_analyzer.analyze_batch(raw_model, optimizer, iter_num)
+            recorded = spectral_analyzer.analyze_batch(raw_model, optimizer_instance, iter_num)
             if recorded:
                 # Track the loss value for correlation with spectral properties
                 if len(train_losses) > 0:
@@ -336,15 +343,15 @@ def train_run(run_idx):
         
         # clip the gradient
         if grad_clip != 0.0:
-            scaler.unscale_(optimizer)
+            scaler.unscale_(optimizer_instance)
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         
         # step the optimizer and scaler if training in fp16
-        scaler.step(optimizer)
+        scaler.step(optimizer_instance)
         scaler.update()
         
         # flush the gradients as soon as we can, no need for this memory anymore
-        optimizer.zero_grad(set_to_none=True)
+        optimizer_instance.zero_grad(set_to_none=True)
 
         # timing and logging
         t1 = time.time()
@@ -383,7 +390,7 @@ def train_run(run_idx):
     # if master_process:
     #     checkpoint = {
     #         'model': raw_model.state_dict(),
-    #         'optimizer': optimizer.state_dict(),
+    #         'optimizer': optimizer_instance.state_dict(),
     #         'model_args': model_args,
     #         'iter_num': iter_num,
     #         'best_val_loss': best_val_loss,
