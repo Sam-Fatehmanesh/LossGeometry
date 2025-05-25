@@ -92,7 +92,7 @@ class AnalysisPlotter:
         run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
         print(f"Plotting Spectral Density evolution for {layer_name} {matrix_description}{run_info}...")
         
-        num_plots_aim = 4
+        num_plots_aim = 20
         num_plots_to_show = min(len(results_data), num_plots_aim)
         if num_plots_to_show <= 0:
             print(f"No density data points available for {layer_name}.")
@@ -413,11 +413,8 @@ class AnalysisPlotter:
         run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
         print(f"Plotting Singular Value distribution for {layer_name} {matrix_description}{run_info}...")
         
-        # Determine number of snapshots: one per epoch if num_epochs > 1 else default 4
-        if num_epochs > 1:
-            num_plots_aim = num_epochs
-        else:
-            num_plots_aim = 4
+        # Determine number of snapshots: always plot 20 equally spaced snapshots
+        num_plots_aim = 20
         num_plots_to_show = min(len(results_data), num_plots_aim)
         if num_plots_to_show <= 0:
             print(f"No singular value data points available for {layer_name}.")
