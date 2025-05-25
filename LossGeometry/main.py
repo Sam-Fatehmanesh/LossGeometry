@@ -44,6 +44,7 @@ def parse_args():
     
     # Output parameters
     parser.add_argument('--experiment_dir', type=str, default='experiments', help='Base directory for experiments')
+    parser.add_argument('--experiment_name', type=str, default=None, help='Name of the experiment subdirectory')
     # Model selection
     parser.add_argument('--model', type=str, choices=['mlp','resnet18','vit'], default='mlp',
                         help='Which model to use: mlp, resnet18, or vit')
@@ -81,8 +82,14 @@ def train_and_analyze(args):
     # Generate timestamp for this run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Create experiment directory
-    experiment_dir = get_experiment_dir(args.experiment_dir)
+    # Determine experiment directory
+    base_experiment_dir = get_experiment_dir(args.experiment_dir)
+    if args.experiment_name:
+        base_experiment_dir = os.path.join(base_experiment_dir, args.experiment_name)
+        os.makedirs(base_experiment_dir, exist_ok=True)
+        print(f"Created experiment subdirectory: {base_experiment_dir}")
+    experiment_dir = base_experiment_dir
+    # Create timestamped directory
     output_dir = os.path.join(experiment_dir, timestamp)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

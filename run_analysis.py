@@ -35,6 +35,7 @@ def main():
     
     # Output parameters
     parser.add_argument('--experiment_dir', type=str, default='experiments', help='Base directory for experiments')
+    parser.add_argument('--experiment_name', type=str, default=None, help='Name of the experiment subdirectory')
     # Model selection
     parser.add_argument('--model', type=str, choices=['mlp','resnet18','vit'], default='mlp',
                         help='Which model to use: mlp, resnet18, or vit')
