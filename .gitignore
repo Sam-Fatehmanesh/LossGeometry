@@ -13,3 +13,6 @@ __pycache__/
 *.h5
 .env
 env
+temp.txt
+
+*.txt

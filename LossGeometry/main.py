@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument('--num_epochs', type=int, default=1, help='Number of epochs')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--log_every_n_batches', type=int, default=200, help='Frequency of analysis calculation')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=0.01, help='Learning rate')
     parser.add_argument('--num_runs', type=int, default=1, help='Number of training runs to average results over')
     parser.add_argument('--parallel_runs', type=int, default=1, 
                         help='Maximum number of runs to execute in parallel (default: 1)')
@@ -40,9 +40,8 @@ def parse_args():
     # Analysis parameters
     parser.add_argument('--analyze_W', action='store_true', help='Analyze weight matrices (default)')
     parser.add_argument('--analyze_delta_W', action='store_true', help='Analyze weight update matrices')
-    parser.add_argument('--analyze_spectral_density', action='store_true', help='Analyze spectral density (default)')
-    parser.add_argument('--analyze_level_spacing', action='store_true', help='Analyze level spacing')
-    parser.add_argument('--analyze_singular_values', action='store_true', help='Analyze singular values')
+    parser.add_argument('--analyze_singular_values', action='store_true', help='Analyze singular values (default)')
+    parser.add_argument('--disable_gradient_noise', action='store_true', help='Disable gradient noise calculation (faster training)')
     
     # Output parameters
     parser.add_argument('--experiment_dir', type=str, default='experiments', help='Base directory for experiments')
@@ -56,8 +55,7 @@ def parse_args():
     # Set defaults for analysis types if none specified
     if not args.analyze_W and not args.analyze_delta_W:
         args.analyze_W = True
-    if not args.analyze_spectral_density and not args.analyze_level_spacing and not args.analyze_singular_values:
-        args.analyze_spectral_density = True
+    if not args.analyze_singular_values:
         args.analyze_singular_values = True
     
     return args
@@ -95,7 +93,7 @@ def _run_training(run_config):
     model.to(device)
     
     # Setup optimizer and loss
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
     criterion = nn.CrossEntropyLoss()
     
     # Load MNIST dataset
@@ -105,8 +103,6 @@ def _run_training(run_config):
     analyzer = SpectralAnalyzer(
         analyze_W=args.analyze_W,
         analyze_delta_W=args.analyze_delta_W,
-        analyze_spectral_density=args.analyze_spectral_density,
-        analyze_level_spacing=args.analyze_level_spacing,
         analyze_singular_values=args.analyze_singular_values
     )
     analyzer.initialize_layer_stats(target_layers)
@@ -132,7 +128,13 @@ def _run_training(run_config):
             
             # Perform analysis
             if current_batch % args.log_every_n_batches == 0:
-                analyzer.analyze_batch(model, optimizer, current_batch)
+                # Only pass data_loader and criterion if gradient noise is enabled
+                if args.disable_gradient_noise:
+                    analyzer.analyze_batch(model, optimizer, current_batch, loss_tensor=loss)
+                else:
+                    analyzer.analyze_batch(model, optimizer, current_batch, loss_tensor=loss, 
+                                         data_loader=train_loader, criterion=criterion,
+                                         current_inputs=inputs, current_labels=labels)
             
             # Optimizer step
             optimizer.step()
@@ -198,11 +200,9 @@ def train_and_analyze(args):
         'batches': []
     }
     
-    # Initialize dictionaries to store accumulated eigenvalues and singular values
-    accumulated_eigenvalues = {}
+    # Initialize dictionaries to store accumulated singular values
     accumulated_singular_values = {}
     for layer_name in target_layers:
-        accumulated_eigenvalues[layer_name] = {}
         accumulated_singular_values[layer_name] = {}
     
     # List to store analyzers from each run
@@ -218,10 +218,6 @@ def train_and_analyze(args):
     
     matrix_type = "Weight (W)" if args.analyze_W else "Weight Update (ΔW)"
     analysis_types = []
-    if args.analyze_spectral_density:
-        analysis_types.append("Spectral Density")
-    if args.analyze_level_spacing:
-        analysis_types.append("Level Spacing")
     if args.analyze_singular_values:
         analysis_types.append("Singular Values")
     
@@ -308,19 +304,10 @@ def train_and_analyze(args):
         all_runs_data['batch_numbers'].append(analyzer.stats['batch_numbers'])
         all_runs_data['batches'].append(analyzer.stats['batch'])
         
-        # Collect eigenvalues and singular values
+        # Collect singular values
         for layer_name in target_layers:
-            # For eigenvalues
-            if args.analyze_spectral_density and 'eigenvalues_list' in analyzer.stats['results'][layer_name]:
-                eigenvalues_list = analyzer.stats['results'][layer_name]['eigenvalues_list']
-                for j, eigenvalues in enumerate(eigenvalues_list):
-                    batch_key = analyzer.stats['batch'][j] if j < len(analyzer.stats['batch']) else j
-                    if batch_key not in accumulated_eigenvalues[layer_name]:
-                        accumulated_eigenvalues[layer_name][batch_key] = []
-                    accumulated_eigenvalues[layer_name][batch_key].append(eigenvalues)
-            
-            # For singular values
-            if args.analyze_singular_values and 'singular_values_list' in analyzer.stats['results'][layer_name]:
+            if (layer_name in analyzer.stats['results'] and 
+                'singular_values_list' in analyzer.stats['results'][layer_name]):
                 sv_list = analyzer.stats['results'][layer_name]['singular_values_list']
                 for j, sv in enumerate(sv_list):
                     batch_key = analyzer.stats['batch'][j] if j < len(analyzer.stats['batch']) else j
@@ -335,8 +322,6 @@ def train_and_analyze(args):
     aggregated_analyzer = SpectralAnalyzer(
         analyze_W=args.analyze_W,
         analyze_delta_W=args.analyze_delta_W,
-        analyze_spectral_density=args.analyze_spectral_density,
-        analyze_level_spacing=args.analyze_level_spacing,
         analyze_singular_values=args.analyze_singular_values
     )
     aggregated_analyzer.initialize_layer_stats(target_layers)
@@ -352,33 +337,51 @@ def train_and_analyze(args):
         avg_losses = np.mean([run_losses for run_losses in all_runs_data['loss_values']], axis=0)
         aggregated_analyzer.stats['loss_values'] = avg_losses.tolist()
         
-        # Process eigenvalues and singular values
+        # Average loss gradients across runs if available
+        all_loss_gradients = []
+        for analyzer in analyzers:
+            if 'loss_gradients' in analyzer.stats and len(analyzer.stats['loss_gradients']) > 0:
+                all_loss_gradients.append(analyzer.stats['loss_gradients'])
+        
+        if all_loss_gradients:
+            avg_loss_gradients = np.mean(all_loss_gradients, axis=0)
+            aggregated_analyzer.stats['loss_gradients'] = avg_loss_gradients.tolist()
+        
+        # Process singular values
         for layer_name in target_layers:
             # Create empty result structure for this layer
             if layer_name not in aggregated_analyzer.stats['results']:
                 aggregated_analyzer.stats['results'][layer_name] = {}
             
-            # Average eigenvalues
-            if args.analyze_spectral_density:
-                eigenvalues_list = []
-                for batch in sorted(accumulated_eigenvalues[layer_name].keys()):
-                    if accumulated_eigenvalues[layer_name][batch]:
-                        # For each batch, get the eigenvalues from each run
-                        batch_eigenvalues = accumulated_eigenvalues[layer_name][batch]
-                        
-                        # Convert to histograms and average the distributions
-                        # This is a simplified approach - more sophisticated approaches could be used
-                        if batch_eigenvalues and len(batch_eigenvalues) > 0:
-                            # Flatten all eigenvalues from all runs at this batch
-                            all_eigenvalues = np.concatenate(batch_eigenvalues)
-                            eigenvalues_list.append(all_eigenvalues)
+            # Average loss gradients for this layer across runs
+            layer_loss_gradients = []
+            layer_gradient_noise = []
+            for analyzer in analyzers:
+                if (layer_name in analyzer.stats['results'] and 
+                    'loss_gradients' in analyzer.stats['results'][layer_name] and
+                    len(analyzer.stats['results'][layer_name]['loss_gradients']) > 0):
+                    layer_loss_gradients.append(analyzer.stats['results'][layer_name]['loss_gradients'])
                 
-                aggregated_analyzer.stats['results'][layer_name]['eigenvalues_list'] = eigenvalues_list
-                if eigenvalues_list:
-                    aggregated_analyzer.stats['results'][layer_name]['last_eigenvalues'] = eigenvalues_list[-1]
+                # Also collect gradient noise if available
+                if (layer_name in analyzer.stats['results'] and 
+                    'gradient_noise' in analyzer.stats['results'][layer_name] and
+                    len(analyzer.stats['results'][layer_name]['gradient_noise']) > 0):
+                    layer_gradient_noise.append(analyzer.stats['results'][layer_name]['gradient_noise'])
+            
+            if layer_loss_gradients:
+                avg_layer_gradients = np.mean(layer_loss_gradients, axis=0)
+                aggregated_analyzer.stats['results'][layer_name]['loss_gradients'] = avg_layer_gradients.tolist()
+            else:
+                aggregated_analyzer.stats['results'][layer_name]['loss_gradients'] = []
+            
+            if layer_gradient_noise:
+                avg_layer_noise = np.mean(layer_gradient_noise, axis=0)
+                aggregated_analyzer.stats['results'][layer_name]['gradient_noise'] = avg_layer_noise.tolist()
+            else:
+                aggregated_analyzer.stats['results'][layer_name]['gradient_noise'] = []
             
             # Average singular values
-            if args.analyze_singular_values:
+            if 'singular_values_list' in analyzer.stats['results'][layer_name]:
                 sv_list = []
                 for batch in sorted(accumulated_singular_values[layer_name].keys()):
                     if accumulated_singular_values[layer_name][batch]:
@@ -398,11 +401,28 @@ def train_and_analyze(args):
         aggregated_analyzer = analyzers[0]
     
     # Save the aggregated data
-    h5_path = save_analysis_data(aggregated_analyzer, reference_model, experiment_dir, timestamp, num_runs=args.num_runs)
+    h5_path = save_analysis_data(
+        aggregated_analyzer, reference_model, experiment_dir, timestamp, 
+        num_runs=args.num_runs,
+        learning_rate=args.learning_rate,
+        batch_size=args.batch_size,
+        num_epochs=args.num_epochs,
+        log_every_n_batches=args.log_every_n_batches,
+        parallel_runs=args.parallel_runs,
+        analyze_W=args.analyze_W,
+        analyze_delta_W=args.analyze_delta_W,
+        analyze_singular_values=args.analyze_singular_values,
+        disable_gradient_noise=args.disable_gradient_noise,
+        experiment_dir_name=args.experiment_dir
+    )
     
     # Generate plots
     print("\nGenerating plots...")
     plotter = AnalysisPlotter(output_dir, timestamp)
+    
+    # Create metadata summary from the saved data
+    saved_data = load_analysis_data(h5_path)
+    plotter.create_metadata_summary(saved_data)
     
     # Plot loss
     if args.num_runs > 1:
@@ -418,38 +438,35 @@ def train_and_analyze(args):
         layer_shape = layer_shapes.get(layer_name, None)
         layer_results = aggregated_analyzer.stats['results'][layer_name]
         
-        # Plot spectral density if analyzed
-        if args.analyze_spectral_density and 'eigenvalues_list' in layer_results:
-            plotter.plot_spectral_density(
-                layer_name, 
-                layer_shape, 
-                layer_results['eigenvalues_list'], 
-                aggregated_analyzer.stats['batch'], 
-                aggregated_analyzer.matrix_description,
-                runs=args.num_runs
-            )
-        
-        # Plot level spacing if analyzed
-        if args.analyze_level_spacing and 'std_dev_norm_spacing_list' in layer_results:
-            plotter.plot_level_spacing(
-                layer_name, 
-                layer_shape, 
-                layer_results['std_dev_norm_spacing_list'], 
-                layer_results.get('last_normalized_spacings', None), 
-                aggregated_analyzer.stats['batch'], 
-                aggregated_analyzer.matrix_description,
-                runs=args.num_runs
-            )
-        
         # Plot singular values if analyzed
-        if args.analyze_singular_values and 'singular_values_list' in layer_results:
+        if 'singular_values_list' in layer_results:
             plotter.plot_singular_values(
                 layer_name, 
                 layer_shape, 
                 layer_results['singular_values_list'], 
                 aggregated_analyzer.stats['batch'], 
                 aggregated_analyzer.matrix_description,
-                runs=args.num_runs
+                runs=args.num_runs,
+                learning_rate=args.learning_rate
+            )
+            
+            # Plot singular value dynamics terms if we have the necessary data
+            if ('loss_gradients' in layer_results and 
+                len(layer_results['loss_gradients']) > 0 and
+                len(layer_results['singular_values_list']) > 0):
+                
+                # Get gradient noise data if available
+                gradient_noise = layer_results.get('gradient_noise', None)
+                
+                plotter.plot_singular_value_dynamics_terms(
+                    layer_name,
+                    layer_shape,
+                    layer_results['singular_values_list'],
+                    layer_results['loss_gradients'],
+                    aggregated_analyzer.stats['batch'],
+                    aggregated_analyzer.matrix_description,
+                    runs=args.num_runs,
+                    gradient_noise=gradient_noise
             )
     
     print("\nAnalysis complete. Results saved to:", output_dir)
@@ -519,6 +536,9 @@ def replot_from_h5(h5_path, experiment_dir):
     print("\nGenerating plots...")
     plotter = AnalysisPlotter(output_dir, timestamp)
     
+    # Create metadata summary
+    plotter.create_metadata_summary(data)
+    
     # Get num_runs
     num_runs = data['metadata'].get('num_runs', 1)
     
@@ -541,38 +561,38 @@ def replot_from_h5(h5_path, experiment_dir):
         matrix_description = data['metadata'].get('matrix_description', 
                                                  "Centered & Normalized Weight (W' / (std(W') * sqrt(max(N))))")
         
-        # Plot spectral density if analyzed
-        if 'eigenvalues_list' in layer_results and layer_results['eigenvalues_list']:
-            plotter.plot_spectral_density(
-                layer_name, 
-                layer_shape, 
-                layer_results['eigenvalues_list'], 
-                data['batches'], 
-                matrix_description,
-                runs=num_runs
-            )
-        
-        # Plot level spacing if analyzed
-        if 'std_dev_norm_spacing_list' in layer_results and layer_results['std_dev_norm_spacing_list'] is not None:
-            plotter.plot_level_spacing(
-                layer_name, 
-                layer_shape, 
-                layer_results['std_dev_norm_spacing_list'], 
-                layer_results.get('last_normalized_spacings', None), 
-                data['batches'], 
-                matrix_description,
-                runs=num_runs
-            )
-        
         # Plot singular values if analyzed
         if 'singular_values_list' in layer_results and layer_results['singular_values_list']:
+            # Get learning rate from saved data, default to 0.01 if not available
+            learning_rate = data['training_parameters'].get('learning_rate', 0.01)
+            
             plotter.plot_singular_values(
                 layer_name, 
                 layer_shape, 
                 layer_results['singular_values_list'], 
                 data['batches'], 
                 matrix_description,
-                runs=num_runs
+                runs=num_runs,
+                learning_rate=learning_rate
+            )
+            
+            # Plot singular value dynamics terms if we have the necessary data
+            if ('loss_gradients' in layer_results and 
+                len(layer_results['loss_gradients']) > 0 and
+                len(layer_results['singular_values_list']) > 0):
+                
+                # Get gradient noise data if available
+                gradient_noise = layer_results.get('gradient_noise', None)
+                
+                plotter.plot_singular_value_dynamics_terms(
+                    layer_name,
+                    layer_shape,
+                    layer_results['singular_values_list'],
+                    layer_results['loss_gradients'],
+                    data['batches'],
+                    matrix_description,
+                    runs=num_runs,
+                    gradient_noise=gradient_noise
             )
     
     print("\nReplotting complete. New plots saved to:", output_dir)

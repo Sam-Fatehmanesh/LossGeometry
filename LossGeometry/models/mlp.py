@@ -49,7 +49,7 @@ class SimpleMLP(nn.Module):
             # Initialize bias to zero
             if layer.bias is not None:
                 nn.init.zeros_(layer.bias.data)
-                
+        
         print("Initialized all layers with Gaussian weights N(0, 1/fan_in)")
 
     def forward(self, x):

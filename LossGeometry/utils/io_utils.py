@@ -4,8 +4,13 @@ import numpy as np
 import json
 import re
 from datetime import datetime
+import torch
 
-def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs=1):
+def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs=1, 
+                       learning_rate=0.01, batch_size=64, num_epochs=1, 
+                       log_every_n_batches=200, parallel_runs=1,
+                       analyze_W=True, analyze_delta_W=False, analyze_singular_values=True,
+                       disable_gradient_noise=False, experiment_dir_name='experiments'):
     """
     Save analysis data to HDF5 format
     
@@ -15,6 +20,16 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
         experiment_dir (str): Base directory for experiments
         timestamp (str, optional): Timestamp for the experiment, if None, will generate one
         num_runs (int): Number of runs the results are averaged over
+        learning_rate (float): Learning rate used for training
+        batch_size (int): Batch size used for training
+        num_epochs (int): Number of epochs trained
+        log_every_n_batches (int): Frequency of analysis calculation
+        parallel_runs (int): Number of parallel runs executed
+        analyze_W (bool): Whether weight matrices were analyzed
+        analyze_delta_W (bool): Whether weight update matrices were analyzed
+        analyze_singular_values (bool): Whether singular values were analyzed
+        disable_gradient_noise (bool): Whether gradient noise calculation was disabled
+        experiment_dir_name (str): Name of the base experiment directory
         
     Returns:
         str: Path to the saved file
@@ -39,11 +54,38 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
     with h5py.File(h5_path, 'w') as f:
         # Save metadata
         meta_group = f.create_group('metadata')
-        meta_group.attrs['timestamp'] = timestamp
-        meta_group.attrs['matrix_type'] = stats['matrix_type']
-        meta_group.attrs['analysis_type'] = stats['analysis_type']
-        meta_group.attrs['matrix_description'] = analyzer.matrix_description
+        meta_group.attrs['timestamp'] = timestamp.encode('utf-8')
+        meta_group.attrs['matrix_type'] = stats['matrix_type'].encode('utf-8')
+        meta_group.attrs['analysis_type'] = stats['analysis_type'].encode('utf-8')
+        meta_group.attrs['matrix_description'] = analyzer.matrix_description.encode('utf-8')
         meta_group.attrs['num_runs'] = num_runs
+        
+        # Training parameters
+        training_group = f.create_group('training_parameters')
+        training_group.attrs['learning_rate'] = learning_rate
+        training_group.attrs['batch_size'] = batch_size
+        training_group.attrs['num_epochs'] = num_epochs
+        training_group.attrs['log_every_n_batches'] = log_every_n_batches
+        training_group.attrs['parallel_runs'] = parallel_runs
+        
+        # Analysis parameters
+        analysis_group = f.create_group('analysis_parameters')
+        analysis_group.attrs['analyze_W'] = analyze_W
+        analysis_group.attrs['analyze_delta_W'] = analyze_delta_W
+        analysis_group.attrs['analyze_singular_values'] = analyze_singular_values
+        analysis_group.attrs['disable_gradient_noise'] = disable_gradient_noise
+        
+        # System and experiment info
+        system_group = f.create_group('system_info')
+        system_group.attrs['experiment_dir_name'] = experiment_dir_name.encode('utf-8')
+        system_group.attrs['pytorch_version'] = (torch.__version__ if 'torch' in globals() else 'unknown').encode('utf-8')
+        system_group.attrs['device_available'] = ('cuda' if torch.cuda.is_available() else 'cpu').encode('utf-8')
+        if torch.cuda.is_available():
+            system_group.attrs['cuda_device_count'] = torch.cuda.device_count()
+            system_group.attrs['cuda_device_name'] = torch.cuda.get_device_name(0).encode('utf-8')
+        else:
+            system_group.attrs['cuda_device_count'] = 0
+            system_group.attrs['cuda_device_name'] = 'N/A'.encode('utf-8')
         
         # Save model info as attributes
         model_group = f.create_group('model')
@@ -56,6 +98,14 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
         f.create_dataset('batch_numbers', data=np.array(stats['batch_numbers']))
         f.create_dataset('batches', data=np.array(stats['batch']))
         f.create_dataset('loss_values', data=np.array(stats['loss_values']))
+        
+        # Save loss gradients if available
+        if 'loss_gradients' in stats and len(stats['loss_gradients']) > 0:
+            f.create_dataset('loss_gradients', data=np.array(stats['loss_gradients']))
+        
+        # Save gradient noise if available
+        if 'gradient_noise' in stats and len(stats['gradient_noise']) > 0:
+            f.create_dataset('gradient_noise', data=np.array(stats['gradient_noise']))
         
         # Save layer results
         layers_group = f.create_group('layers')
@@ -88,6 +138,14 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
                 for i, sv_array in enumerate(layer_data['singular_values_list']):
                     if sv_array is not None:
                         sv_group.create_dataset(f'batch_{i}', data=sv_array)
+            
+            # Save loss gradients for this layer if they exist
+            if 'loss_gradients' in layer_data and layer_data['loss_gradients']:
+                layer_group.create_dataset('loss_gradients', data=np.array(layer_data['loss_gradients']))
+            
+            # Save gradient noise for this layer if it exists
+            if 'gradient_noise' in layer_data and layer_data['gradient_noise']:
+                layer_group.create_dataset('gradient_noise', data=np.array(layer_data['gradient_noise']))
     
     print(f"Analysis data saved to {h5_path}")
     return h5_path
@@ -107,6 +165,9 @@ def load_analysis_data(h5_path):
     
     data = {
         'metadata': {},
+        'training_parameters': {},
+        'analysis_parameters': {},
+        'system_info': {},
         'model': {},
         'batch_numbers': [],
         'batches': [],
@@ -118,15 +179,73 @@ def load_analysis_data(h5_path):
         # Load metadata
         if 'metadata' in f:
             for key, value in f['metadata'].attrs.items():
-                data['metadata'][key] = value
+                # Decode byte strings back to regular strings
+                if isinstance(value, bytes):
+                    data['metadata'][key] = value.decode('utf-8')
+                else:
+                    data['metadata'][key] = value
             # Default to 1 run if not found
             if 'num_runs' not in data['metadata']:
                 data['metadata']['num_runs'] = 1
         
+        # Load training parameters
+        if 'training_parameters' in f:
+            for key, value in f['training_parameters'].attrs.items():
+                # Decode byte strings back to regular strings
+                if isinstance(value, bytes):
+                    data['training_parameters'][key] = value.decode('utf-8')
+                else:
+                    data['training_parameters'][key] = value
+        else:
+            # For backward compatibility, check if learning_rate is in metadata
+            if 'learning_rate' in data['metadata']:
+                data['training_parameters']['learning_rate'] = data['metadata']['learning_rate']
+            # Set defaults for missing parameters
+            data['training_parameters'].setdefault('learning_rate', 0.01)
+            data['training_parameters'].setdefault('batch_size', 64)
+            data['training_parameters'].setdefault('num_epochs', 1)
+            data['training_parameters'].setdefault('log_every_n_batches', 200)
+            data['training_parameters'].setdefault('parallel_runs', 1)
+        
+        # Load analysis parameters
+        if 'analysis_parameters' in f:
+            for key, value in f['analysis_parameters'].attrs.items():
+                # Decode byte strings back to regular strings
+                if isinstance(value, bytes):
+                    data['analysis_parameters'][key] = value.decode('utf-8')
+                else:
+                    data['analysis_parameters'][key] = value
+        else:
+            # Set defaults for missing parameters
+            data['analysis_parameters'].setdefault('analyze_W', True)
+            data['analysis_parameters'].setdefault('analyze_delta_W', False)
+            data['analysis_parameters'].setdefault('analyze_singular_values', True)
+            data['analysis_parameters'].setdefault('disable_gradient_noise', False)
+        
+        # Load system info
+        if 'system_info' in f:
+            for key, value in f['system_info'].attrs.items():
+                # Decode byte strings back to regular strings
+                if isinstance(value, bytes):
+                    data['system_info'][key] = value.decode('utf-8')
+                else:
+                    data['system_info'][key] = value
+        else:
+            # Set defaults for missing parameters
+            data['system_info'].setdefault('experiment_dir_name', 'experiments')
+            data['system_info'].setdefault('pytorch_version', 'unknown')
+            data['system_info'].setdefault('device_available', 'unknown')
+            data['system_info'].setdefault('cuda_device_count', 0)
+            data['system_info'].setdefault('cuda_device_name', 'N/A')
+        
         # Load model info
         if 'model' in f:
             for key, value in f['model'].attrs.items():
-                data['model'][key] = value
+                # Decode byte strings back to regular strings
+                if isinstance(value, bytes):
+                    data['model'][key] = value.decode('utf-8')
+                else:
+                    data['model'][key] = value
         
         # Load batch and loss data
         if 'batch_numbers' in f:
@@ -135,6 +254,18 @@ def load_analysis_data(h5_path):
             data['batches'] = f['batches'][()]
         if 'loss_values' in f:
             data['loss_values'] = f['loss_values'][()]
+        
+        # Load loss gradients if available
+        if 'loss_gradients' in f:
+            data['loss_gradients'] = f['loss_gradients'][()]
+        else:
+            data['loss_gradients'] = []
+        
+        # Load gradient noise if available
+        if 'gradient_noise' in f:
+            data['gradient_noise'] = f['gradient_noise'][()]
+        else:
+            data['gradient_noise'] = []
         
         # Load layer results
         if 'layers' in f:
@@ -192,6 +323,18 @@ def load_analysis_data(h5_path):
                     data['results'][layer_name]['singular_values_list'] = sv_list
                     if sv_list:
                         data['results'][layer_name]['last_singular_values'] = sv_list[-1]
+                
+                # Load loss gradients for this layer if they exist
+                if 'loss_gradients' in layer_group:
+                    data['results'][layer_name]['loss_gradients'] = layer_group['loss_gradients'][()]
+                else:
+                    data['results'][layer_name]['loss_gradients'] = []
+                
+                # Load gradient noise for this layer if it exists
+                if 'gradient_noise' in layer_group:
+                    data['results'][layer_name]['gradient_noise'] = layer_group['gradient_noise'][()]
+                else:
+                    data['results'][layer_name]['gradient_noise'] = []
     
     print(f"Loaded analysis data from {h5_path}")
     return data
