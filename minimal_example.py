@@ -27,10 +27,10 @@ import requests
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-MODEL_TYPE = 'vit'  # Choose 'mlp', 'vit', or 'nanogpt'
+MODEL_TYPE = 'nanogpt'  # Choose 'mlp', 'vit', or 'nanogpt'
 NUM_RUNS            = 5
 NUM_EPOCHS          = 10
-BATCH_SIZE          = 64
+BATCH_SIZE          = 16
 LEARNING_RATE       = 1e-2
 MOMENTUM            = 0.9
 LOG_EVERY_N_BATCHES = 200
@@ -54,10 +54,10 @@ VIT_INIT_FC = True
 
 # nanoGPT configuration parameters
 NANOGPT_VOCAB_SIZE = 50304  # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64
-NANOGPT_BLOCK_SIZE = 256
-NANOGPT_N_LAYER = 4
-NANOGPT_N_HEAD = 4
-NANOGPT_N_EMBD = 256
+NANOGPT_BLOCK_SIZE = 128
+NANOGPT_N_LAYER = 2
+NANOGPT_N_HEAD = 2
+NANOGPT_N_EMBD = 128
 NANOGPT_DROPOUT = 0.0
 NANOGPT_BIAS = False
 NANOGPT_WEIGHT_DECAY = 0.1
