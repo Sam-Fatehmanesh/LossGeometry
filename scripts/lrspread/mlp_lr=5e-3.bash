@@ -2,7 +2,7 @@
   --dataset mnist \
   --model mlp \
   --output_size 10 \
-  --num_runs 64 \
+  --num_runs 32 \
   --num_epochs 300 \
   --learning_rate 0.005 \
   --analyze_singular_values \

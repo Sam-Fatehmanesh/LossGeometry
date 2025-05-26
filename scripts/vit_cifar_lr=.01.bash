@@ -1,0 +1,16 @@
+./run_analysis.py \
+  --dataset cifar100 \
+  --model vit \
+  --vit_image_size 32 \
+  --vit_patch_size 8 \
+  --vit_embed_dim 256 \
+  --vit_depth 2 \
+  --vit_num_heads 100 \
+  --output_size 100 \
+  --vit_mlp_ratio 2.0 \
+  --vit_input_channels 3 \
+  --vit_init_fc \
+  --num_runs 32 \
+  --learning_rate 0.01 \
+  --num_epochs 200 \
+  --experiment_name "vit_cifar_lr=.01"

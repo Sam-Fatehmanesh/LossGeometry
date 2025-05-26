@@ -2,8 +2,9 @@
   --dataset mnist \
   --model mlp \
   --output_size 10 \
-  --num_runs 32 \
-  --num_epochs 100 \
+  --num_runs 64 \
+  --num_epochs 10 \
   --learning_rate 0.01 \
+  --momentum .5 \
   --analyze_singular_values \
-  --experiment_name "mlp_mnist_lr=1e-2"
+  --experiment_name "mlp_mnist_momentum=.5" 

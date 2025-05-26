@@ -10,7 +10,7 @@
   --vit_mlp_ratio 2.0 \
   --vit_input_channels 1 \
   --vit_init_fc \
-  --num_runs 64 \
+  --num_runs 32 \
   --learning_rate 0.05 \
   --num_epochs 100 \
   --experiment_name "vit_mnist_lr=5e-2"
