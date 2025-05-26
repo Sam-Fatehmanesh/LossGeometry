@@ -58,11 +58,8 @@ NANOGPT_N_HEAD = 4
 NANOGPT_N_EMBD = 256
 NANOGPT_DROPOUT = 0.0
 NANOGPT_BIAS = False
-NANOGPT_LEARNING_RATE = 5e-4
 NANOGPT_WEIGHT_DECAY = 0.1
-NANOGPT_BETA1 = 0.9
-NANOGPT_MAX_ITERS = 2000
-NANOGPT_OPTIMIZER = 'sgd'
+NANOGPT_MAX_ITERS = 200
 NANOGPT_WARMUP_ITERS = 200
 NANOGPT_LR_DECAY_ITERS = 2000
 NANOGPT_MIN_LR = 5e-5
@@ -570,7 +567,7 @@ class GPTSpectral(nn.Module):
         mfu = flops_achieved / flops_promised
         return mfu
         
-    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type, optimizer_type='adamw'):
+    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
         # start with all of the candidate parameters
         param_dict = {pn: p for pn, p in self.named_parameters()}
         # filter out those that do not require grad
@@ -584,24 +581,8 @@ class GPTSpectral(nn.Module):
             {'params': nodecay_params, 'weight_decay': 0.0}
         ]
         
-        optimizer_type_lower = optimizer_type.lower()
-        
-        if optimizer_type_lower == 'sgd':
-            # Use SGD optimizer with momentum
-            print(f"using SGD optimizer with momentum={betas[0]}")
-            optimizer = torch.optim.SGD(optim_groups, lr=learning_rate, momentum=betas[0])
-        elif optimizer_type_lower == 'sgd_no_momentum':
-            # Use SGD optimizer without momentum
-            print(f"using SGD optimizer without momentum")
-            optimizer = torch.optim.SGD(optim_groups, lr=learning_rate, momentum=0.0)
-        else:
-            # Use AdamW optimizer (default)
-            use_fused = (device_type == 'cuda') and ('fused' in inspect.signature(torch.optim.AdamW).parameters)
-            print(f"using fused AdamW: {use_fused}")
-            extra_args = dict(fused=True) if use_fused else dict()
-            optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        
-        return optimizer
+        print(f"using SGD optimizer with momentum={betas[0]}")
+        return torch.optim.SGD(optim_groups, lr=learning_rate, momentum=betas[0])
         
     @classmethod
     def from_pretrained(cls, model_type, override_args=None):
@@ -773,10 +754,9 @@ def train_and_aggregate():
             # Use nanoGPT-specific optimizer settings (adapted from train_spectral.py)
             optimizer = model.configure_optimizers(
                 weight_decay=NANOGPT_WEIGHT_DECAY, 
-                learning_rate=NANOGPT_LEARNING_RATE, 
-                betas=(NANOGPT_BETA1, 0.95),
+                learning_rate=LEARNING_RATE, 
+                betas=(MOMENTUM, 0.95),
                 device_type=device.type,
-                optimizer_type=NANOGPT_OPTIMIZER
             )
             criterion = None  # nanoGPT computes loss internally
         else:
@@ -806,7 +786,7 @@ def train_and_aggregate():
                 
                 # Determine and set the learning rate for this iteration
                 if NANOGPT_DECAY_LR:
-                    lr = get_lr(iter_num, NANOGPT_LEARNING_RATE, NANOGPT_WARMUP_ITERS, 
+                    lr = get_lr(iter_num, LEARNING_RATE, NANOGPT_WARMUP_ITERS, 
                                NANOGPT_LR_DECAY_ITERS, NANOGPT_MIN_LR)
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = lr
