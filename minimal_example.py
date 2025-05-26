@@ -25,7 +25,7 @@ import requests
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-MODEL_TYPE = 'nanogpt'  # Choose 'mlp', 'vit', or 'nanogpt'
+MODEL_TYPE = 'vit'  # Choose 'mlp', 'vit', or 'nanogpt'
 NUM_RUNS            = 5
 NUM_EPOCHS          = 10
 BATCH_SIZE          = 64
@@ -59,7 +59,7 @@ NANOGPT_N_EMBD = 256
 NANOGPT_DROPOUT = 0.0
 NANOGPT_BIAS = False
 NANOGPT_WEIGHT_DECAY = 0.1
-NANOGPT_MAX_ITERS = 200
+NANOGPT_MAX_ITERS = 2000
 NANOGPT_WARMUP_ITERS = 200
 NANOGPT_LR_DECAY_ITERS = 2000
 NANOGPT_MIN_LR = 5e-5
@@ -643,9 +643,7 @@ else:
 LAYER_NAMES = _reference_model.get_target_layers()
 LAYER_SHAPES = [tuple(_reference_model.get_parameter(name).shape) for name in LAYER_NAMES]
 
-# ------------------------------------------------------------------------------
-# TEXT DATA LOADING FOR NANOGPT (adapted from train_spectral.py)
-# ------------------------------------------------------------------------------
+# Helper function for loading text data for nanoGPT
 def get_batch_text(split, block_size, batch_size, device):
     """Load training and validation data for nanoGPT"""
     # We recreate np.memmap every batch to avoid a memory leak
@@ -721,7 +719,6 @@ def train_and_aggregate():
         print(f"\n--- Run {run+1}/{NUM_RUNS} ---")
         if MODEL_TYPE == 'mlp':
             model = SimpleMLP(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, NUM_HIDDEN_LAYERS).to(device)
-            # Use standard optimizer settings
             optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE, momentum=MOMENTUM)
             criterion = nn.CrossEntropyLoss()
         elif MODEL_TYPE == 'vit':
@@ -736,7 +733,6 @@ def train_and_aggregate():
                 input_channels=VIT_INPUT_CHANNELS,
                 gaussian_init_fc=VIT_INIT_FC
             ).to(device)
-            # Use standard optimizer settings
             optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE, momentum=MOMENTUM)
             criterion = nn.CrossEntropyLoss()
         elif MODEL_TYPE == 'nanogpt':
@@ -751,7 +747,7 @@ def train_and_aggregate():
                 bias=NANOGPT_BIAS
             )
             model = GPTSpectral(nanogpt_config).to(device)
-            # Use nanoGPT-specific optimizer settings (adapted from train_spectral.py)
+            # Use nanoGPT-specific optimizer settings
             optimizer = model.configure_optimizers(
                 weight_decay=NANOGPT_WEIGHT_DECAY, 
                 learning_rate=LEARNING_RATE, 
