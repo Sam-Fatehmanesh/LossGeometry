@@ -1,0 +1,16 @@
+./run_analysis.py \
+  --dataset mnist \
+  --model vit \
+  --vit_image_size 28 \
+  --vit_patch_size 7 \
+  --vit_embed_dim 256 \
+  --vit_depth 2 \
+  --vit_num_heads 4 \
+  --output_size 10 \
+  --vit_mlp_ratio 2.0 \
+  --vit_input_channels 1 \
+  --vit_init_fc \
+  --num_runs 64 \
+  --learning_rate 0.05 \
+  --num_epochs 100 \
+  --experiment_name "vit_mnist_lr=5e-2"
