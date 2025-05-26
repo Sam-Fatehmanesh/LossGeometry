@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--log_every_n_batches', type=int, default=200, help='Frequency of analysis calculation')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--momentum', type=float, default=0.0, help='SGD momentum')
     parser.add_argument('--num_runs', type=int, default=1, help='Number of training runs to average results over')
     
     # Analysis parameters
@@ -208,7 +209,7 @@ def train_and_analyze(args):
         
         # Setup optimizer and loss
         #optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-        optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
+        optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum)
         criterion = nn.CrossEntropyLoss()
         
         # Load dataset
