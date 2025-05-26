@@ -10,7 +10,8 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
                        learning_rate=0.01, batch_size=64, num_epochs=1, 
                        log_every_n_batches=200, parallel_runs=1,
                        analyze_W=True, analyze_delta_W=False, analyze_singular_values=True,
-                       disable_gradient_noise=False, experiment_dir_name='experiments'):
+                       disable_gradient_noise=False, experiment_dir_name='experiments',
+                       optimizer='sgd', momentum=0.9, beta1=0.9, beta2=0.999, eps=1e-8, weight_decay=0.0):
     """
     Save analysis data to HDF5 format
     
@@ -30,6 +31,12 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
         analyze_singular_values (bool): Whether singular values were analyzed
         disable_gradient_noise (bool): Whether gradient noise calculation was disabled
         experiment_dir_name (str): Name of the base experiment directory
+        optimizer (str): Optimizer type ('sgd' or 'adam')
+        momentum (float): Momentum factor for SGD optimizer
+        beta1 (float): Beta1 parameter for Adam optimizer
+        beta2 (float): Beta2 parameter for Adam optimizer
+        eps (float): Epsilon parameter for Adam optimizer
+        weight_decay (float): Weight decay (L2 penalty) for both optimizers
         
     Returns:
         str: Path to the saved file
@@ -67,6 +74,14 @@ def save_analysis_data(analyzer, model, experiment_dir, timestamp=None, num_runs
         training_group.attrs['num_epochs'] = num_epochs
         training_group.attrs['log_every_n_batches'] = log_every_n_batches
         training_group.attrs['parallel_runs'] = parallel_runs
+        
+        # Optimizer parameters
+        training_group.attrs['optimizer'] = optimizer.encode('utf-8')
+        training_group.attrs['momentum'] = momentum
+        training_group.attrs['beta1'] = beta1
+        training_group.attrs['beta2'] = beta2
+        training_group.attrs['eps'] = eps
+        training_group.attrs['weight_decay'] = weight_decay
         
         # Analysis parameters
         analysis_group = f.create_group('analysis_parameters')
@@ -206,6 +221,14 @@ def load_analysis_data(h5_path):
             data['training_parameters'].setdefault('num_epochs', 1)
             data['training_parameters'].setdefault('log_every_n_batches', 200)
             data['training_parameters'].setdefault('parallel_runs', 1)
+        
+        # Set defaults for optimizer parameters (for backward compatibility)
+        data['training_parameters'].setdefault('optimizer', 'sgd')
+        data['training_parameters'].setdefault('momentum', 0.9)
+        data['training_parameters'].setdefault('beta1', 0.9)
+        data['training_parameters'].setdefault('beta2', 0.999)
+        data['training_parameters'].setdefault('eps', 1e-8)
+        data['training_parameters'].setdefault('weight_decay', 0.0)
         
         # Load analysis parameters
         if 'analysis_parameters' in f:

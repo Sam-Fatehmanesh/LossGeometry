@@ -28,12 +28,27 @@ def main():
     parser.add_argument('--parallel_runs', '-p', type=int, default=1, 
                         help='Maximum number of runs to execute in parallel (default: 1)')
     
+    # Optimizer parameters
+    parser.add_argument('--optimizer', type=str, default='sgd', choices=['sgd', 'adam'], 
+                        help='Optimizer to use: sgd (SGD with momentum) or adam (Adam)')
+    parser.add_argument('--momentum', type=float, default=0.9, 
+                        help='Momentum factor for SGD optimizer (default: 0.9)')
+    parser.add_argument('--beta1', type=float, default=0.9, 
+                        help='Beta1 parameter for Adam optimizer (default: 0.9)')
+    parser.add_argument('--beta2', type=float, default=0.999, 
+                        help='Beta2 parameter for Adam optimizer (default: 0.999)')
+    parser.add_argument('--eps', type=float, default=1e-8, 
+                        help='Epsilon parameter for Adam optimizer (default: 1e-8)')
+    parser.add_argument('--weight_decay', type=float, default=0.0, 
+                        help='Weight decay (L2 penalty) for both optimizers (default: 0.0)')
+    
     # Analysis parameters
     parser.add_argument('--analyze_W', action='store_true', help='Analyze weight matrices (default)')
     parser.add_argument('--analyze_delta_W', action='store_true', help='Analyze weight update matrices')
     parser.add_argument('--analyze_spectral_density', action='store_true', help='Analyze spectral density (default)')
     parser.add_argument('--analyze_level_spacing', action='store_true', help='Analyze level spacing')
     parser.add_argument('--analyze_singular_values', action='store_true', help='Analyze singular values')
+    parser.add_argument('--disable_gradient_noise', action='store_true', help='Disable gradient noise calculation (faster training)')
     
     # Output parameters
     parser.add_argument('--experiment_dir', type=str, default='experiments', help='Base directory for experiments')

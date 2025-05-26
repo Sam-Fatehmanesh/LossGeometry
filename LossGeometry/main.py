@@ -37,6 +37,20 @@ def parse_args():
     parser.add_argument('--parallel_runs', type=int, default=1, 
                         help='Maximum number of runs to execute in parallel (default: 1)')
     
+    # Optimizer parameters
+    parser.add_argument('--optimizer', type=str, default='sgd', choices=['sgd', 'adam'], 
+                        help='Optimizer to use: sgd (SGD with momentum) or adam (Adam)')
+    parser.add_argument('--momentum', type=float, default=0.9, 
+                        help='Momentum factor for SGD optimizer (default: 0.9)')
+    parser.add_argument('--beta1', type=float, default=0.9, 
+                        help='Beta1 parameter for Adam optimizer (default: 0.9)')
+    parser.add_argument('--beta2', type=float, default=0.999, 
+                        help='Beta2 parameter for Adam optimizer (default: 0.999)')
+    parser.add_argument('--eps', type=float, default=1e-8, 
+                        help='Epsilon parameter for Adam optimizer (default: 1e-8)')
+    parser.add_argument('--weight_decay', type=float, default=0.0, 
+                        help='Weight decay (L2 penalty) for both optimizers (default: 0.0)')
+    
     # Analysis parameters
     parser.add_argument('--analyze_W', action='store_true', help='Analyze weight matrices (default)')
     parser.add_argument('--analyze_delta_W', action='store_true', help='Analyze weight update matrices')
@@ -93,7 +107,24 @@ def _run_training(run_config):
     model.to(device)
     
     # Setup optimizer and loss
-    optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
+    if args.optimizer.lower() == 'adam':
+        optimizer = optim.Adam(
+            model.parameters(), 
+            lr=args.learning_rate,
+            betas=(args.beta1, args.beta2),
+            eps=args.eps,
+            weight_decay=args.weight_decay
+        )
+        print(f"Using Adam optimizer with lr={args.learning_rate}, betas=({args.beta1}, {args.beta2}), eps={args.eps}, weight_decay={args.weight_decay}")
+    else:  # SGD
+        optimizer = optim.SGD(
+            model.parameters(), 
+            lr=args.learning_rate, 
+            momentum=args.momentum,
+            weight_decay=args.weight_decay
+        )
+        print(f"Using SGD optimizer with lr={args.learning_rate}, momentum={args.momentum}, weight_decay={args.weight_decay}")
+    
     criterion = nn.CrossEntropyLoss()
     
     # Load MNIST dataset
@@ -413,7 +444,13 @@ def train_and_analyze(args):
         analyze_delta_W=args.analyze_delta_W,
         analyze_singular_values=args.analyze_singular_values,
         disable_gradient_noise=args.disable_gradient_noise,
-        experiment_dir_name=args.experiment_dir
+        experiment_dir_name=args.experiment_dir,
+        optimizer=args.optimizer,
+        momentum=args.momentum,
+        beta1=args.beta1,
+        beta2=args.beta2,
+        eps=args.eps,
+        weight_decay=args.weight_decay
     )
     
     # Generate plots
