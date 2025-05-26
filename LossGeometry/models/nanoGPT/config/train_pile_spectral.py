@@ -21,8 +21,8 @@ block_size = 256
 gradient_accumulation_steps = 1
 
 # Shorter training run for spectral analysis
-max_iters = 20000
-lr_decay_iters = 20000
+max_iters = 2000
+lr_decay_iters = 2000
 warmup_iters = 200
 
 # Learning rate
@@ -30,7 +30,8 @@ learning_rate = 5e-4
 min_lr = 5e-5
 
 # Optimizer configuration
-optimizer = 'sgd_no_momentum'  # Use SGD without momentum
+optimizer = 'sgd'  # Use SGD with momentum
+beta1 = 0.9  # Momentum value
 
 # Evaluation and logging
 eval_interval = 100

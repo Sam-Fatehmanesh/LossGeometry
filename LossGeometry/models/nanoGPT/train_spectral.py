@@ -57,17 +57,17 @@ n_embd = 512
 dropout = 0.0
 bias = False
 # adamw optimizer
-learning_rate = 3e-4
-max_iters = 10000
+learning_rate = 0.01
+max_iters = 2000
 weight_decay = 0.1
 beta1 = 0.9
 beta2 = 0.95
 grad_clip = 1.0
-optimizer = 'adamw'  # default optimizer
+optimizer = 'sgd'  # SGD optimizer with momentum
 # learning rate decay settings
 decay_lr = True
 warmup_iters = 1000
-lr_decay_iters = 10000
+lr_decay_iters = 2000
 min_lr = 3e-5
 # DDP settings
 backend = 'nccl'

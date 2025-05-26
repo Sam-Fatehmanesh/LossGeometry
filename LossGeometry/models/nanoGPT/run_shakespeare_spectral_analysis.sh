@@ -4,6 +4,7 @@
 
 # Default parameters - can be overridden with command line arguments
 NUM_RUNS=3
+OUT_DIR="out-spectral"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -18,6 +19,15 @@ while [[ $# -gt 0 ]]; do
         shift 2
       fi
       ;;
+    --out_dir|--out_dir=*)
+      if [[ $key == *=* ]]; then
+        OUT_DIR="${key#*=}"
+        shift
+      else
+        OUT_DIR="$2"
+        shift 2
+      fi
+      ;;
     *)
       echo "Unknown option: $1"
       exit 1
@@ -26,7 +36,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Define directories
-OUT_DIR="out-spectral"
 SPECTRAL_DIR="$OUT_DIR/spectral"
 FIGURE_DIR="$OUT_DIR/figures"
 DATA_DIR="data/pile"
@@ -37,13 +46,15 @@ mkdir -p $SPECTRAL_DIR
 mkdir -p $FIGURE_DIR
 mkdir -p $DATA_DIR
 
+echo "=== Using output directory: $OUT_DIR ==="
+
 # Step 1: Prepare the text data
 echo "=== Step 1: Preparing the text data ==="
 python prepare_pile.py --data_dir $DATA_DIR
 
 # Step 2: Train nanoGPT with spectral analysis, using multiple runs
 echo "=== Step 2: Training nanoGPT with spectral analysis ($NUM_RUNS runs) ==="
-python train_spectral.py config/train_pile_spectral.py --num_runs=$NUM_RUNS
+python train_spectral.py config/train_pile_spectral.py --num_runs=$NUM_RUNS --out_dir=$OUT_DIR
 
 # Step 3: Analyze and visualize spectral results using plot_utils.py's AnalysisPlotter
 echo "=== Step 3: Analyzing and visualizing spectral results using plot_utils.py ==="

@@ -18,6 +18,8 @@ from torch.nn import functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for headless environments
 import matplotlib.pyplot as plt
 from skrmt.ensemble.spectral_law import MarchenkoPasturDistribution, TracyWidomDistribution
 import requests
@@ -958,7 +960,14 @@ def plot_singular_evolution(final_sv, batches, layer_names, layer_shapes):
         for ax in axes[num_plots:]: ax.axis('off')
         fig.suptitle(f"Singular-Value Evolution for {name} (runs={NUM_RUNS})", fontsize=14)
         plt.tight_layout(rect=[0,0.03,1,0.95])
-        plt.show()
+        # plt.show()
+
+        # Save plot to file instead of showing (works in headless environments)
+        safe_name = name.replace('/', '_').replace('.', '_')
+        filename = f"spectral_evolution_{safe_name}.png"
+        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        print(f"Saved plot: {filename}")
+        plt.close(fig)  # Close figure to free memory
 
 # ------------------------------------------------------------------------------
 # EXECUTION
