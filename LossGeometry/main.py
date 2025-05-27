@@ -487,6 +487,18 @@ def train_and_analyze(args):
                 learning_rate=args.learning_rate
             )
             
+            # Also create overlay plots showing evolution across batches (if enabled)
+            if not getattr(args, 'no_overlay_plots', False):
+                plotter.plot_singular_values_overlay(
+                    layer_name, 
+                    layer_shape, 
+                    layer_results['singular_values_list'], 
+                    aggregated_analyzer.stats['batch'], 
+                    aggregated_analyzer.matrix_description,
+                    runs=args.num_runs,
+                    learning_rate=args.learning_rate
+                )
+            
             # Plot singular value dynamics terms if we have the necessary data
             if ('loss_gradients' in layer_results and 
                 len(layer_results['loss_gradients']) > 0 and
@@ -604,6 +616,17 @@ def replot_from_h5(h5_path, experiment_dir):
             learning_rate = data['training_parameters'].get('learning_rate', 0.01)
             
             plotter.plot_singular_values(
+                layer_name, 
+                layer_shape, 
+                layer_results['singular_values_list'], 
+                data['batches'], 
+                matrix_description,
+                runs=num_runs,
+                learning_rate=learning_rate
+            )
+            
+            # Also create overlay plots showing evolution across batches
+            plotter.plot_singular_values_overlay(
                 layer_name, 
                 layer_shape, 
                 layer_results['singular_values_list'], 

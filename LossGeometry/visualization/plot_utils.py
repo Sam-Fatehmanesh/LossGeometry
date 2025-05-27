@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 import os
 import math
 from scipy.signal import find_peaks
@@ -478,6 +479,194 @@ class AnalysisPlotter:
             plot_path = os.path.join(self.subdirs['singular_values'], plot_filename)
             plt.savefig(plot_path, dpi=self.dpi, bbox_inches='tight')
             print(f"Saved {plot_type_title.lower()} singular value plot for {layer_name} to: {plot_path}")
+            plt.close()
+            
+        # Create additional plots with specific batches (0, 200, 400) in one row
+        self._create_specific_batch_plots(layer_name, layer_shape, results_data, batch_numbers, 
+                                        matrix_description, runs, plot_non_normalized, 
+                                        normalization_factors, learning_rate)
+
+    def _create_specific_batch_plots(self, layer_name, layer_shape, results_data, batch_numbers, 
+                                   matrix_description, runs=1, plot_non_normalized=True, 
+                                   normalization_factors=None, learning_rate=0.01):
+        """
+        Create plots with only specific batches (0, 200, 400) in one row, without titles.
+        Creates both normalized and non-normalized versions if requested.
+        """
+        target_batches = [0, 200, 400]
+        
+        # Find indices for target batches
+        target_indices = []
+        found_batches = []
+        for target_batch in target_batches:
+            # Find the closest batch number to the target
+            if len(batch_numbers) > 0:
+                closest_idx = min(range(len(batch_numbers)), 
+                                key=lambda i: abs(batch_numbers[i] - target_batch))
+                if closest_idx < len(results_data) and results_data[closest_idx] is not None:
+                    target_indices.append(closest_idx)
+                    found_batches.append(batch_numbers[closest_idx])
+        
+        if len(target_indices) == 0:
+            print(f"No valid data found for target batches {target_batches} for {layer_name}")
+            return
+            
+        print(f"Creating specific batch plots for {layer_name} with batches: {found_batches}")
+        
+        # Create plots for both normalized and non-normalized if requested
+        plot_types = ["normalized"]
+        if plot_non_normalized:
+            plot_types.append("non_normalized")
+            
+        for plot_type in plot_types:
+            plot_type_suffix = "_non_normalized" if plot_type == "non_normalized" else ""
+            
+            # Create figure with one row, using gridspec for different subplot widths
+            num_plots = len(target_indices)
+            
+            if num_plots == 1:
+                fig, axes = plt.subplots(1, 1, figsize=(6, 5))
+                axes = [axes]  # Make it iterable
+            else:
+                # Use gridspec to create subplots with different widths
+                # First two plots (batches 0, 200) are narrower, last plot (batch 400) is wider for legend
+                
+                if num_plots == 3:
+                    # Width ratios: batch 0 (narrow), batch 200 (narrow), batch 400 (wide for legend)
+                    width_ratios = [2, 2, 3]  # 2:2:3 ratio
+                    total_width = sum(width_ratios) * 2  # Scale up the total figure width
+                elif num_plots == 2:
+                    # If only 2 plots, make them equal but smaller
+                    width_ratios = [1, 1.5]  # Second plot slightly wider for potential legend
+                    total_width = sum(width_ratios) * 2.5
+                else:
+                    # Fallback for other cases
+                    width_ratios = [1] * num_plots
+                    total_width = num_plots * 6
+                
+                fig = plt.figure(figsize=(total_width, 5))
+                gs = gridspec.GridSpec(1, num_plots, width_ratios=width_ratios, figure=fig)
+                axes = [fig.add_subplot(gs[0, i]) for i in range(num_plots)]
+                
+            # Determine common plot range for all plots
+            all_sv_list = []
+            for idx in target_indices:
+                if plot_type == "non_normalized" and normalization_factors is not None and idx < len(normalization_factors):
+                    sv_values = results_data[idx] * normalization_factors[idx]
+                else:
+                    sv_values = results_data[idx]
+                all_sv_list.append(sv_values)
+                
+            if all_sv_list:
+                all_selected_sv = np.concatenate(all_sv_list)
+                max_sv = np.max(all_selected_sv)
+                plot_max = max(max_sv * 1.1, 3.0)
+                common_plot_range = (0, plot_max)
+            else:
+                common_plot_range = (0, 3.0)
+                
+            # Plot each target batch
+            for plot_idx, data_idx in enumerate(target_indices):
+                ax = axes[plot_idx]
+                batch_num = batch_numbers[data_idx]
+                
+                # Get singular values for this plot type
+                if plot_type == "non_normalized" and normalization_factors is not None and data_idx < len(normalization_factors):
+                    sv_values = results_data[data_idx] * normalization_factors[data_idx]
+                else:
+                    sv_values = results_data[data_idx]
+                
+                # Dimensions and MP parameters
+                if layer_shape is not None:
+                    m, n = layer_shape
+                    p = min(m, n)
+                    n_max = max(m, n)
+                    ratio = p / n_max
+                else:
+                    ratio = 1.0
+                    m = n_max = 1024
+                    p = 1024
+                    
+                total_count = len(sv_values)
+                
+                # Create histogram
+                num_bins = max(min(total_count // 10, 100), 30)
+                counts, bin_edges, _ = ax.hist(sv_values, bins=num_bins, density=False,
+                                            alpha=0.7, color='royalblue',
+                                            label='Singular Value Histogram',
+                                            range=common_plot_range)
+                bin_width = bin_edges[1] - bin_edges[0]
+                
+                # Add MP distribution
+                mp_dist = MarchenkoPasturDistribution(beta=1, ratio=ratio, sigma=1.0)
+                x_sv = np.linspace(common_plot_range[0], common_plot_range[1], 1000)
+                sv_density = np.array([2*s*mp_dist.pdf(s*s) if s>0 else 0 for s in x_sv])
+                scaled_mp = sv_density * total_count * bin_width
+                ax.plot(x_sv, scaled_mp, 'r--', linewidth=1.5,
+                        label=f'Marchenko Pastur Distribution')
+                        
+                # Add Tracy-Widom distribution
+                tw_dist = TracyWidomDistribution(beta=1)
+                bulk_edge = 1.0 + np.sqrt(ratio)
+                edge_position = 2.0
+                scale_factor = 0.5*(np.sqrt(m) + np.sqrt(n))**(-1/3)
+                
+                x_tw = np.linspace(edge_position - 4*scale_factor,
+                                edge_position + 4*scale_factor, 300)
+                tw_args = (x_tw - edge_position) / scale_factor
+                pdf_tw = tw_dist.pdf(tw_args) / scale_factor
+                
+                # Scale TW curve to histogram height
+                max_pdf = np.max(pdf_tw)
+                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+                edge_idx = np.where((bin_centers > edge_position - scale_factor) &
+                                    (bin_centers < edge_position + scale_factor))[0]
+                hist_edge = np.max(counts[edge_idx]) if len(edge_idx)>0 else np.max(counts)
+                tw_scale = hist_edge / max_pdf if max_pdf>0 else 1.0
+                ax.fill_between(x_tw, 0, pdf_tw * tw_scale, color='darkorange', alpha=0.7,
+                               label=f'TW (edge={edge_position:.2f}, scale={scale_factor:.2e})')
+                
+                # Styling (no title as requested)
+                value_type = "Singular Value" if plot_type == "non_normalized" else "Normalized Singular Value (σ)"
+                ax.set_xlabel(value_type)
+                
+                # Only show y-axis label and ticks for the first plot (batch 0)
+                if plot_idx == 0:
+                    ax.set_ylabel("Count")
+                else:
+                    ax.set_ylabel("")  # Remove y-axis label for batches 200 and 400
+                    ax.set_yticklabels([])  # Remove y-axis tick labels for batches 200 and 400
+                
+                # Only show legend for the last plot (batch 400)
+                if plot_idx == len(target_indices) - 1:  # Last plot
+                    ax.legend(fontsize='small')
+                    # Keep full range for the last plot (with legend)
+                    ax.set_xlim(common_plot_range)
+                else:
+                    # Cut x-axis at 4 for batches 0 and 200 to remove excess whitespace
+                    ax.set_xlim(0, 4)
+                
+                ax.grid(True, alpha=0.5)
+                ax.set_ylim(bottom=0)
+                
+                # Add batch number as text annotation instead of title
+                ax.text(0.02, 0.98, f"Batch: {batch_num}", transform=ax.transAxes, 
+                       fontsize=12, verticalalignment='top',
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+            # Adjust layout to remove whitespace on the right for first two plots
+            plt.tight_layout()
+            
+            # Fine-tune subplot spacing to remove right whitespace for batches 0 and 200
+            if num_plots > 1:
+                plt.subplots_adjust(wspace=0.1)  # Reduce horizontal spacing between subplots
+            
+            # Save the specific batch plot
+            plot_type_title = "non_normalized" if plot_type == "non_normalized" else "normalized"
+            specific_filename = f"{self.timestamp}_{layer_name.replace('.', '_')}_singular_values_{plot_type_title}_batches_0_200_400.png"
+            specific_path = os.path.join(self.subdirs['singular_values'], specific_filename)
+            plt.savefig(specific_path, dpi=self.dpi, bbox_inches='tight')
+            print(f"Saved specific batch ({found_batches}) {plot_type_title} singular value plot for {layer_name} to: {specific_path}")
             plt.close() 
 
     def plot_singular_value_dynamics_terms(self, layer_name, layer_shape, singular_values_data, 
@@ -752,4 +941,564 @@ class AnalysisPlotter:
                         f.write(f"      Singular value snapshots: {len(layer_data['singular_values_list'])}\n")
         
         print(f"Saved metadata summary to: {summary_path}")
-        return summary_path 
+        return summary_path
+
+    def plot_singular_values_overlay(self, layer_name, layer_shape, results_data, batch_numbers, matrix_description, runs=1, plot_non_normalized=True, normalization_factors=None, learning_rate=0.01, batches_to_overlay=None):
+        """
+        Plot singular value evolution with different batches overlaid on the same axes
+        
+        Args:
+            layer_name (str): Name of the layer
+            layer_shape (tuple): Shape of the layer (m, n)
+            results_data (list): List of singular value arrays
+            batch_numbers (list): Batch numbers
+            matrix_description (str): Description of the matrix type
+            runs (int): Number of runs the results are averaged over
+            plot_non_normalized (bool): Whether to also plot non-normalized singular values (default: True)
+            normalization_factors (list): List of normalization factors used (if available)
+            learning_rate (float): Learning rate for theoretical distributions
+            batches_to_overlay (list): Specific batch indices to overlay (if None, uses evenly spaced batches)
+        """
+        if results_data is None or len(results_data) == 0:
+            print(f"No singular values data for {layer_name}. Skipping overlay plot.")
+            return
+            
+        run_info = f" (Averaged over {runs} runs)" if runs > 1 else ""
+        print(f"Creating overlay plot for {layer_name} {matrix_description}{run_info}...")
+        
+        # We'll create plots for both normalized and non-normalized if requested
+        plot_types = ["normalized"]
+        if plot_non_normalized:
+            plot_types.append("non_normalized")
+            print(f"  Also creating non-normalized singular value overlay plots")
+            
+        for plot_type in plot_types:
+            # Determine filename suffix for this plot type
+            plot_type_suffix = "_non_normalized" if plot_type == "non_normalized" else ""
+            
+            # Determine which batches to overlay
+            if batches_to_overlay is None:
+                # Use evenly spaced batches (default: 6 batches)
+                num_overlays = min(6, len(results_data))
+                if num_overlays <= 1:
+                    indices_to_overlay = [0] if len(results_data) > 0 else []
+                else:
+                    indices_to_overlay = np.linspace(0, len(results_data) - 1, num_overlays, dtype=int)
+                    indices_to_overlay = np.unique(indices_to_overlay)
+            else:
+                # Use specified batch indices
+                indices_to_overlay = [i for i in batches_to_overlay if i < len(results_data)]
+            
+            if len(indices_to_overlay) == 0:
+                print(f"No valid batch indices for overlay plot of {layer_name}.")
+                continue
+                
+            print(f"Overlaying {len(indices_to_overlay)} batches: {[batch_numbers[i] for i in indices_to_overlay if i < len(batch_numbers)]}")
+            
+            # Create figure with single subplot: histogram overlay only
+            fig, ax1 = plt.subplots(1, 1, figsize=(10, 6))
+            
+            # Determine common plot range for all plots
+            all_sv_list = []
+            valid_indices = []
+            for idx in indices_to_overlay:
+                if idx < len(results_data) and results_data[idx] is not None and len(results_data[idx]) > 0:
+                    # For non-normalized plots, apply the reverse normalization if factors available
+                    if plot_type == "non_normalized" and normalization_factors is not None and idx < len(normalization_factors):
+                        sv_values = results_data[idx] * normalization_factors[idx]
+                    else:
+                        sv_values = results_data[idx]
+                        
+                    all_sv_list.append(sv_values)
+                    valid_indices.append(idx)
+
+            if len(all_sv_list) == 0:
+                print(f"No valid singular value data for overlay plot of {layer_name}.")
+                plt.close(fig)
+                continue
+
+            # Determine common range
+            all_selected_sv = np.concatenate(all_sv_list)
+            max_sv = np.max(all_selected_sv)
+            common_plot_range = (0, max(max_sv * 1.1, 3.0))
+            print(f"  Common plot range: ({common_plot_range[0]:.2f}, {common_plot_range[1]:.2f})")
+            
+            # Color map for different batches - use red, orange, and yellow
+            warm_colors = ['#FF0000', '#FF4500', '#FFD700', '#FF6347', '#FFA500', '#FFFF00']  # Red, OrangeRed, Gold, Tomato, Orange, Yellow
+            colors = [warm_colors[i % len(warm_colors)] for i in range(len(valid_indices))]
+            
+            # Dimensions and MP parameters
+            if layer_shape is not None:
+                m, n = layer_shape
+                p = min(m, n); n_max = max(m, n)
+                ratio = p / n_max
+            else:
+                ratio = 1.0; m = n_max = 1024; p = 1024
+            
+            # Plot 1: Histogram overlays with high contrast filled areas
+            for i, (data_idx, color) in enumerate(zip(valid_indices, colors)):
+                batch_num = batch_numbers[data_idx] if data_idx < len(batch_numbers) else "Unknown"
+                
+                # For non-normalized plots, apply the reverse normalization if factors available
+                if plot_type == "non_normalized" and normalization_factors is not None and data_idx < len(normalization_factors):
+                    sv_values = results_data[data_idx] * normalization_factors[data_idx]
+                else:
+                    sv_values = results_data[data_idx]
+                
+                # Create histogram with density=True for overlay using high contrast filled areas
+                num_bins = max(min(len(sv_values) // 10, 50), 100)  # Fewer bins for cleaner overlay
+                counts, bin_edges, patches = ax1.hist(sv_values, bins=num_bins, density=True, alpha=0.3, 
+                        color=color, label=f'Batch {batch_num}', 
+                        range=common_plot_range, histtype='stepfilled', linewidth=1.5, edgecolor='black')
+            
+            # Add MP distribution to histogram plot
+            mp_dist = MarchenkoPasturDistribution(beta=1, ratio=ratio, sigma=1.0)
+            x_sv = np.linspace(common_plot_range[0], common_plot_range[1], 1000)
+            sv_density = np.array([2*s*mp_dist.pdf(s*s) if s>0 else 0 for s in x_sv])
+            ax1.plot(x_sv, sv_density, 'r--', linewidth=3, label='Marchenko-Pastur', alpha=0.9)
+            
+            # Add Tracy-Widom distribution (scaled exactly like in plot_singular_values)
+            tw_dist = TracyWidomDistribution(beta=1)
+            bulk_edge = 1.0 + np.sqrt(ratio)
+
+            edge_position = 2.0
+            scale_factor = 0.5*(np.sqrt(m) + np.sqrt(n))**(-1/3) #bulk_edge * (n_max**(-2/3)) * 0.5
+            
+            print(f"  TW edge: {edge_position:.4f}, scale: {scale_factor:.4e}")
+            x_tw = np.linspace(edge_position - 4*scale_factor,
+                            edge_position + 4*scale_factor, 300)
+            tw_args = (x_tw - edge_position) / scale_factor
+            pdf_tw = tw_dist.pdf(tw_args) / scale_factor
+            
+            # Scale TW curve to histogram height (exactly like in plot_singular_values)
+            # Find the batch with the largest histogram counts to determine scaling
+            if len(valid_indices) > 0:
+                max_hist_edge = 0
+                best_idx = valid_indices[0]  # Fallback
+                best_total_count = 0
+                best_bin_width = 1.0
+                
+                # Check all valid batches to find the one with largest histogram counts
+                for idx in valid_indices:
+                    if plot_type == "non_normalized" and normalization_factors is not None and idx < len(normalization_factors):
+                        sv_values = results_data[idx] * normalization_factors[idx]
+                    else:
+                        sv_values = results_data[idx]
+                    
+                    # Create a count histogram (not density) to match the original scaling approach
+                    total_count = len(sv_values)
+                    ref_bins = max(min(total_count // 10, 100), 30)
+                    ref_counts, ref_bin_edges = np.histogram(sv_values, bins=ref_bins, range=common_plot_range, density=False)
+                    ref_bin_width = ref_bin_edges[1] - ref_bin_edges[0]
+                    ref_bin_centers = (ref_bin_edges[:-1] + ref_bin_edges[1:]) / 2
+                    
+                    # Find histogram counts near TW edge
+                    edge_idx = np.where((ref_bin_centers > edge_position - scale_factor) &
+                                       (ref_bin_centers < edge_position + scale_factor))[0]
+                    hist_edge = np.max(ref_counts[edge_idx]) if len(edge_idx)>0 else np.max(ref_counts)
+                    
+                    # Keep track of the batch with the largest histogram counts
+                    if hist_edge > max_hist_edge:
+                        max_hist_edge = hist_edge
+                        best_idx = idx
+                        best_total_count = total_count
+                        best_bin_width = ref_bin_width
+                
+                batch_num_for_scaling = batch_numbers[best_idx] if best_idx < len(batch_numbers) else "Unknown"
+                print(f"  Using batch {batch_num_for_scaling} (index {best_idx}) for TW scaling with max histogram count: {max_hist_edge}")
+                
+                # Scale TW to match histogram count height, then convert to density
+                max_pdf = np.max(pdf_tw)
+                tw_scale = max_hist_edge / max_pdf if max_pdf>0 else 1.0
+                # Convert count-scaled TW to density by dividing by (total_count * bin_width)
+                tw_density_scale = tw_scale / (best_total_count * best_bin_width)
+            else:
+                tw_density_scale = 0.1  # Fallback
+                
+            ax1.plot(x_tw, pdf_tw * tw_density_scale, '#8A2BE2', linewidth=4,
+                    label=f'Tracy-Widom (edge={edge_position:.2f}, scale={scale_factor:.2e})', alpha=0.9)
+            
+            # Styling for histogram plot
+            value_type = "Singular Value" if plot_type == "non_normalized" else "Normalized Singular Value (σ)"
+            ax1.set_xlabel(value_type)
+            ax1.set_ylabel("Density")
+            # No title as requested
+            ax1.legend(fontsize='small')
+            ax1.grid(True, alpha=0.3)
+            ax1.set_xlim(common_plot_range)
+            ax1.set_ylim(bottom=0)
+            
+            # No overall title as requested
+            plt.tight_layout()
+            
+            # Save with appropriate naming
+            plot_filename = f"{self.timestamp}_{layer_name.replace('.', '_')}_singular_values_overlay{plot_type_suffix}.png"
+            plot_path = os.path.join(self.subdirs['singular_values'], plot_filename)
+            plt.savefig(plot_path, dpi=self.dpi, bbox_inches='tight')
+            plot_type_title = "Non-Normalized" if plot_type == "non_normalized" else "Normalized"
+            print(f"Saved {plot_type_title.lower()} singular value overlay plot for {layer_name} to: {plot_path}")
+            plt.close() 
+
+    def plot_learning_rate_vs_spread(self, base_dir=".", parts=["part1", "part2"]):
+        """
+        Plot learning rates against the spread (max - min singular values) for ViT experiments.
+        
+        Args:
+            base_dir (str): Base directory containing part1 and part2 folders
+            parts (list): List of part directories to analyze (default: ["part1", "part2"])
+        """
+        import h5py
+        import glob
+        import re
+        
+        print("Analyzing ViT learning rate experiments...")
+        
+        # Data storage
+        learning_rates = []
+        spreads_by_layer = {}
+        spreads_by_batch = {}
+        experiment_info = []
+        
+        # Process each part directory
+        for part in parts:
+            part_dir = os.path.join(base_dir, part)
+            if not os.path.exists(part_dir):
+                print(f"Warning: Directory {part_dir} does not exist, skipping...")
+                continue
+                
+            print(f"Processing {part_dir}...")
+            
+            # Find all ViT experiment directories
+            vit_dirs = glob.glob(os.path.join(part_dir, "vit_mnist_lr=*"))
+            
+            for vit_dir in vit_dirs:
+                # Extract learning rate from directory name
+                lr_match = re.search(r'lr=([0-9.e-]+)', os.path.basename(vit_dir))
+                if not lr_match:
+                    print(f"Warning: Could not extract learning rate from {vit_dir}")
+                    continue
+                    
+                lr_str = lr_match.group(1)
+                try:
+                    lr = float(lr_str)
+                except ValueError:
+                    print(f"Warning: Could not parse learning rate {lr_str} from {vit_dir}")
+                    continue
+                
+                # Find the timestamp directory
+                timestamp_dirs = glob.glob(os.path.join(vit_dir, "*"))
+                timestamp_dirs = [d for d in timestamp_dirs if os.path.isdir(d)]
+                
+                if len(timestamp_dirs) == 0:
+                    print(f"Warning: No timestamp directory found in {vit_dir}")
+                    continue
+                elif len(timestamp_dirs) > 1:
+                    print(f"Warning: Multiple timestamp directories found in {vit_dir}, using the first one")
+                
+                timestamp_dir = timestamp_dirs[0]
+                
+                # Find the analysis data file
+                h5_files = glob.glob(os.path.join(timestamp_dir, "*_analysis_data.h5"))
+                if len(h5_files) == 0:
+                    print(f"Warning: No analysis data file found in {timestamp_dir}")
+                    continue
+                
+                h5_file = h5_files[0]
+                print(f"  Processing {h5_file} (lr={lr})")
+                
+                try:
+                    with h5py.File(h5_file, 'r') as f:
+                        # Get available layers
+                        if 'layers' not in f:
+                            print(f"    Warning: No layers data in {h5_file}")
+                            continue
+                            
+                        layers = list(f['layers'].keys())
+                        print(f"    Found layers: {layers}")
+                        
+                        # Process each layer
+                        for layer_name in layers:
+                            if layer_name not in spreads_by_layer:
+                                spreads_by_layer[layer_name] = {'learning_rates': [], 'spreads': []}
+                            
+                            layer_group = f['layers'][layer_name]
+                            if 'singular_values' not in layer_group:
+                                print(f"      Warning: No singular values for layer {layer_name}")
+                                continue
+                                
+                            sv_group = layer_group['singular_values']
+                            batch_keys = list(sv_group.keys())
+                            
+                            # Calculate spread for each batch
+                            batch_spreads = []
+                            for batch_key in batch_keys:
+                                sv_data = sv_group[batch_key][:]
+                                if len(sv_data) > 0:
+                                    spread = np.max(sv_data) - np.min(sv_data)
+                                    batch_spreads.append(spread)
+                                    
+                                    # Store by batch number for batch-wise analysis
+                                    batch_num = int(batch_key.replace('batch_', ''))
+                                    if batch_num not in spreads_by_batch:
+                                        spreads_by_batch[batch_num] = {'learning_rates': [], 'spreads': []}
+                                    spreads_by_batch[batch_num]['learning_rates'].append(lr)
+                                    spreads_by_batch[batch_num]['spreads'].append(spread)
+                            
+                            if batch_spreads:
+                                # Use mean spread across all batches for this layer
+                                mean_spread = np.mean(batch_spreads)
+                                spreads_by_layer[layer_name]['learning_rates'].append(lr)
+                                spreads_by_layer[layer_name]['spreads'].append(mean_spread)
+                                print(f"      Layer {layer_name}: mean spread = {mean_spread:.4f}")
+                        
+                        # Store experiment info
+                        experiment_info.append({
+                            'learning_rate': lr,
+                            'part': part,
+                            'directory': vit_dir,
+                            'h5_file': h5_file
+                        })
+                        
+                except Exception as e:
+                    print(f"    Error processing {h5_file}: {e}")
+                    continue
+        
+        if not spreads_by_layer:
+            print("No valid data found for plotting!")
+            return
+            
+        print(f"\nFound data for {len(spreads_by_layer)} layers across {len(experiment_info)} experiments")
+        
+        # Create plots
+        self._plot_lr_vs_spread_by_layer(spreads_by_layer)
+        self._plot_lr_vs_spread_by_batch(spreads_by_batch)
+        self._create_lr_spread_summary(experiment_info, spreads_by_layer, spreads_by_batch)
+        
+    def _plot_lr_vs_spread_by_layer(self, spreads_by_layer):
+        """Plot learning rate vs spread for each layer separately"""
+        num_layers = len(spreads_by_layer)
+        if num_layers == 0:
+            return
+            
+        # Create subplots
+        ncols = min(3, num_layers)
+        nrows = math.ceil(num_layers / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 5), squeeze=False)
+        axes = axes.flatten()
+        
+        layer_names = list(spreads_by_layer.keys())
+        
+        for i, layer_name in enumerate(layer_names):
+            ax = axes[i]
+            data = spreads_by_layer[layer_name]
+            
+            # Sort by learning rate for better visualization
+            sorted_indices = np.argsort(data['learning_rates'])
+            lrs = np.array(data['learning_rates'])[sorted_indices]
+            spreads = np.array(data['spreads'])[sorted_indices]
+            
+            # Plot with both lines and markers
+            ax.semilogx(lrs, spreads, 'o-', linewidth=2, markersize=8, alpha=0.8)
+            
+            # Add value labels on points with better positioning to avoid overlap
+            for lr, spread in zip(lrs, spreads):
+                ax.annotate(f'{spread:.3f}', (lr, spread), 
+                           textcoords="offset points", xytext=(0,5), ha='center', fontsize=8)
+            
+            ax.set_xlabel('Learning Rate')
+            ax.set_ylabel('Spread (Max - Min Singular Value)')
+            ax.set_title(f'Layer: {layer_name}')
+            ax.grid(True, alpha=0.3)
+            
+            # Add trend line if we have enough points
+            if len(lrs) > 2:
+                # Fit in log space
+                log_lrs = np.log10(lrs)
+                coeffs = np.polyfit(log_lrs, spreads, 1)
+                trend_line = np.polyval(coeffs, log_lrs)
+                ax.plot(lrs, trend_line, '--', alpha=0.5, color='red', 
+                       label=f'Trend (slope={coeffs[0]:.3f})')
+                ax.legend()
+        
+        # Turn off unused axes
+        for j in range(num_layers, len(axes)):
+            axes[j].axis('off')
+            
+        # Remove the main title as requested
+        plt.tight_layout()
+        
+        # Save plot
+        plot_filename = f"{self.timestamp}_vit_lr_vs_spread_by_layer.png"
+        plot_path = os.path.join(self.subdirs['analysis_text'], plot_filename)
+        plt.savefig(plot_path, dpi=self.dpi, bbox_inches='tight')
+        print(f"Saved learning rate vs spread (by layer) plot to: {plot_path}")
+        plt.close()
+        
+    def _plot_lr_vs_spread_by_batch(self, spreads_by_batch):
+        """Plot learning rate vs spread for specific batch numbers"""
+        if not spreads_by_batch:
+            return
+            
+        # Select interesting batch numbers to plot
+        available_batches = sorted(spreads_by_batch.keys())
+        target_batches = [0, 100, 200, 400]  # Specific batches of interest
+        batches_to_plot = [b for b in target_batches if b in available_batches]
+        
+        if not batches_to_plot:
+            # Fallback: use first, middle, and last available batches
+            if len(available_batches) >= 3:
+                batches_to_plot = [available_batches[0], 
+                                 available_batches[len(available_batches)//2], 
+                                 available_batches[-1]]
+            else:
+                batches_to_plot = available_batches
+        
+        print(f"Plotting learning rate vs spread for batches: {batches_to_plot}")
+        
+        # Create subplots
+        num_batches = len(batches_to_plot)
+        ncols = min(3, num_batches)
+        nrows = math.ceil(num_batches / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 5), squeeze=False)
+        axes = axes.flatten()
+        
+        for i, batch_num in enumerate(batches_to_plot):
+            ax = axes[i]
+            data = spreads_by_batch[batch_num]
+            
+            # Sort by learning rate
+            sorted_indices = np.argsort(data['learning_rates'])
+            lrs = np.array(data['learning_rates'])[sorted_indices]
+            spreads = np.array(data['spreads'])[sorted_indices]
+            
+            # Plot with both lines and markers
+            ax.semilogx(lrs, spreads, 'o-', linewidth=2, markersize=8, alpha=0.8, color='darkblue')
+            
+            # Add value labels on points with better positioning to avoid overlap with title
+            for lr, spread in zip(lrs, spreads):
+                ax.annotate(f'{spread:.3f}', (lr, spread), 
+                           textcoords="offset points", xytext=(0,5), ha='center', fontsize=8)
+            
+            ax.set_xlabel('Learning Rate')
+            ax.set_ylabel('Spread (Max - Min Singular Value)')
+            ax.set_title(f'Batch: {batch_num}')
+            ax.grid(True, alpha=0.3)
+            
+            # Add trend line if we have enough points
+            if len(lrs) > 2:
+                # Fit in log space
+                log_lrs = np.log10(lrs)
+                coeffs = np.polyfit(log_lrs, spreads, 1)
+                trend_line = np.polyval(coeffs, log_lrs)
+                ax.plot(lrs, trend_line, '--', alpha=0.5, color='red', 
+                       label=f'Trend (slope={coeffs[0]:.3f})')
+                ax.legend()
+        
+        # Turn off unused axes
+        for j in range(num_batches, len(axes)):
+            axes[j].axis('off')
+            
+        # Remove the main title as requested
+        plt.tight_layout()
+        
+        # Save plot
+        plot_filename = f"{self.timestamp}_vit_lr_vs_spread_by_batch.png"
+        plot_path = os.path.join(self.subdirs['analysis_text'], plot_filename)
+        plt.savefig(plot_path, dpi=self.dpi, bbox_inches='tight')
+        print(f"Saved learning rate vs spread (by batch) plot to: {plot_path}")
+        plt.close()
+        
+    def _create_lr_spread_summary(self, experiment_info, spreads_by_layer, spreads_by_batch):
+        """Create a detailed text summary of the learning rate vs spread analysis"""
+        summary_filename = f"{self.timestamp}_vit_lr_spread_analysis.txt"
+        summary_path = os.path.join(self.subdirs['analysis_text'], summary_filename)
+        
+        with open(summary_path, 'w') as f:
+            f.write("ViT Learning Rate vs Singular Value Spread Analysis\n")
+            f.write("=" * 60 + "\n\n")
+            f.write(f"Generated: {self.timestamp}\n\n")
+            
+            # Experiment overview
+            f.write("Experiment Overview:\n")
+            f.write("-" * 20 + "\n")
+            f.write(f"Total experiments analyzed: {len(experiment_info)}\n")
+            learning_rates = sorted(set(exp['learning_rate'] for exp in experiment_info))
+            f.write(f"Learning rates tested: {learning_rates}\n")
+            f.write(f"Layers analyzed: {list(spreads_by_layer.keys())}\n\n")
+            
+            # Detailed experiment info
+            f.write("Experiment Details:\n")
+            f.write("-" * 20 + "\n")
+            for exp in sorted(experiment_info, key=lambda x: x['learning_rate']):
+                f.write(f"LR {exp['learning_rate']}: {exp['directory']}\n")
+            f.write("\n")
+            
+            # Layer-wise analysis
+            f.write("Layer-wise Spread Analysis:\n")
+            f.write("-" * 30 + "\n")
+            for layer_name, data in spreads_by_layer.items():
+                f.write(f"\nLayer: {layer_name}\n")
+                f.write("LR\t\tMean Spread\n")
+                f.write("-" * 25 + "\n")
+                
+                # Sort by learning rate
+                sorted_indices = np.argsort(data['learning_rates'])
+                for idx in sorted_indices:
+                    lr = data['learning_rates'][idx]
+                    spread = data['spreads'][idx]
+                    f.write(f"{lr:.2e}\t{spread:.6f}\n")
+                
+                # Calculate correlation
+                if len(data['learning_rates']) > 2:
+                    log_lrs = np.log10(data['learning_rates'])
+                    correlation = np.corrcoef(log_lrs, data['spreads'])[0, 1]
+                    f.write(f"\nCorrelation (log LR vs spread): {correlation:.4f}\n")
+            
+            # Batch-wise summary (for selected batches)
+            f.write("\n\nBatch-wise Spread Analysis (Selected Batches):\n")
+            f.write("-" * 45 + "\n")
+            
+            # Select a few representative batches
+            available_batches = sorted(spreads_by_batch.keys())
+            target_batches = [0, 100, 200, 400]
+            batches_to_summarize = [b for b in target_batches if b in available_batches]
+            
+            for batch_num in batches_to_summarize:
+                data = spreads_by_batch[batch_num]
+                f.write(f"\nBatch {batch_num}:\n")
+                f.write("LR\t\tSpread\n")
+                f.write("-" * 20 + "\n")
+                
+                # Sort by learning rate
+                sorted_indices = np.argsort(data['learning_rates'])
+                for idx in sorted_indices:
+                    lr = data['learning_rates'][idx]
+                    spread = data['spreads'][idx]
+                    f.write(f"{lr:.2e}\t{spread:.6f}\n")
+                
+                # Calculate correlation
+                if len(data['learning_rates']) > 2:
+                    log_lrs = np.log10(data['learning_rates'])
+                    correlation = np.corrcoef(log_lrs, data['spreads'])[0, 1]
+                    f.write(f"Correlation (log LR vs spread): {correlation:.4f}\n")
+            
+            # Overall statistics
+            f.write("\n\nOverall Statistics:\n")
+            f.write("-" * 20 + "\n")
+            
+            all_spreads = []
+            all_log_lrs = []
+            for layer_data in spreads_by_layer.values():
+                all_spreads.extend(layer_data['spreads'])
+                all_log_lrs.extend(np.log10(layer_data['learning_rates']))
+            
+            if all_spreads:
+                f.write(f"Total data points: {len(all_spreads)}\n")
+                f.write(f"Spread range: [{np.min(all_spreads):.6f}, {np.max(all_spreads):.6f}]\n")
+                f.write(f"Mean spread: {np.mean(all_spreads):.6f} ± {np.std(all_spreads):.6f}\n")
+                
+                if len(all_spreads) > 2:
+                    overall_correlation = np.corrcoef(all_log_lrs, all_spreads)[0, 1]
+                    f.write(f"Overall correlation (log LR vs spread): {overall_correlation:.4f}\n")
+        
+        print(f"Saved detailed learning rate vs spread analysis to: {summary_path}") 
